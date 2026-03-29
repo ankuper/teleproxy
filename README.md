@@ -246,7 +246,7 @@ WantedBy=multi-user.target
 ### Docker notes (IPv6)
 - Ensure Docker daemon has IPv6 enabled and the host has routable IPv6.
 - Port publishing must include IPv6 (Docker binds to IPv6 only if daemon IPv6 is enabled). See Docker docs for `daemon.json` (`"ipv6": true`, `"fixed-cidr-v6": "…/64"`).
-- The provided image’s default entrypoint does not add `-6`. To use IPv6, either run Teleproxy on the host, or build/override the container command to include `-6`.
+- The provided image's default entrypoint does not add `-6`. To use IPv6, either run Teleproxy on the host, or build/override the container command to include `-6`.
 
 ## Transport Modes and Secret Prefixes
 
@@ -293,10 +293,10 @@ echo -n "ee${SECRET}" && echo -n $DOMAIN | xxd -plain
 ```
 
 **Benefits**:
-- ✅ **Traffic appears as TLS 1.3**: Harder to detect and block
-- ✅ **Works with modern clients**: Desktop, mobile, and web clients
-- ✅ **Domain flexibility**: Choose any TLS 1.3-capable domain
-- ✅ **DPI resistant**: Traffic indistinguishable from standard TLS 1.3
+- Traffic appears as TLS 1.3: Harder to detect and block
+- Works with modern clients: Desktop, mobile, and web clients
+- Domain flexibility: Choose any TLS 1.3-capable domain
+- DPI resistant: Traffic indistinguishable from standard TLS 1.3
 
 ### EE Mode with Custom TLS Backend (TCP Splitting)
 
@@ -651,6 +651,15 @@ Mount a volume:
 
 ### Available Tags
 
+**GitHub Container Registry (ghcr.io):**
+
 - `ghcr.io/teleproxy/teleproxy:latest` - Latest stable build from master branch
 - `ghcr.io/teleproxy/teleproxy:master` - Latest build from master branch
 - `ghcr.io/teleproxy/teleproxy:v*` - Specific version tags (when available)
+
+**Docker Hub:**
+
+- `rkline0x/teleproxy:latest`
+- `rkline0x/teleproxy:v*`
+
+Use Docker Hub if your environment has trouble pulling from ghcr.io (e.g. MikroTik RouterOS containers).
