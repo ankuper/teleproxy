@@ -5,24 +5,30 @@ Starts a real Telethon session through a direct-mode Teleproxy and calls
 get_me() to verify the full data path works.  Tests both obfuscated2
 (dd-prefix) and fake-TLS (ee-prefix) transport modes.
 
-Also downloads pre-saved test files (1 MB, 20 MB, 100 MB) through the proxy
-to verify sustained data transfer works correctly — catches DRS delay
-regressions that throttle large downloads.
+Also downloads pre-saved test files through the proxy to verify sustained
+data transfer works correctly — catches DRS delay regressions that throttle
+large downloads.
 
 Uses ONE client per transport mode to avoid AuthKeyDuplicatedError from
 Telegram seeing multiple connections with the same auth key.
 
-Requires TG_BOT_TOKEN (preferred) or TG_STRING_SESSION environment variable.
-The CI job skips entirely on fork PRs (no secrets available).
+Supports three auth modes (checked in order):
+  1. TG_TEST_SESSION  — user session on Telegram's test DC (preferred for CI)
+  2. TG_BOT_TOKEN     — bot token on production DC
+  3. TG_STRING_SESSION — user session on production DC (last resort)
+
+Test DC sessions route through the proxy via dc_id + 10000, so the proxy's
+direct_dc_lookup() maps to the test DC table (149.154.167.40 etc.).
 
 Usage:
+    TG_TEST_SESSION=... TELEPROXY_SECRET=... python3 tests/test_direct_e2e.py
     TG_BOT_TOKEN=... TELEPROXY_SECRET=... python3 tests/test_direct_e2e.py
-    TG_STRING_SESSION=... TELEPROXY_SECRET=... python3 tests/test_direct_e2e.py
 
 Environment variables:
-    TG_BOT_TOKEN        Telegram bot token (preferred — no session revocation)
-    TG_STRING_SESSION   Telethon StringSession string (fallback)
-    TELEPROXY_SECRET      32-char hex proxy secret (required)
+    TG_TEST_SESSION     Telethon StringSession for test DC (preferred)
+    TG_BOT_TOKEN        Telegram bot token (production DC)
+    TG_STRING_SESSION   Telethon StringSession string (production DC)
+    TELEPROXY_SECRET    32-char hex proxy secret (required)
     DIRECT_HOST         Proxy hostname (default: localhost)
     DIRECT_OBFS2_PORT   Obfuscated2 proxy port (default: 8443)
     DIRECT_TLS_PORT     Fake-TLS proxy port (default: 9443)
@@ -36,15 +42,26 @@ import os
 import sys
 import time
 
-# Official Telegram macOS client credentials (public, well-known).
-API_ID = 2834
-API_HASH = "68875f756c9b437a8b916ca3de215815"
+# Custom API credentials avoid anti-abuse when user sessions are used from
+# datacenter IPs.  Falls back to public macOS client ID for bot token auth.
+API_ID = int(os.environ.get("TG_API_ID", "2834"))
+API_HASH = os.environ.get("TG_API_HASH", "68875f756c9b437a8b916ca3de215815")
 
 # Pre-saved test files in the test channel (bot must be admin).
 # Seeded by tests/seed_test_media.py — do not delete from the channel.
-TEST_CHANNEL_ID = -1003687592445
-TEST_FILES = {
+#
+# Production DC (bot token):
+PROD_CHANNEL_ID = -1003687592445
+PROD_TEST_FILES = {
     "1mb": {"msg_id": 4, "size": 1048576, "sha256": "383f48e141893fb74730cf11acc50081e17f5fe30fd4f62dcde7ad1ae9be6a8f"},
+}
+
+# Test DC (user session) — seeded separately, test DC data may be wiped.
+# Re-seed with: .venv/bin/python tests/seed_test_media.py --test-dc
+TEST_DC_CHANNEL_ID = int(os.environ.get("TEST_DC_CHANNEL_ID", "-1008001150052"))
+TEST_DC_FILES = {
+    "1mb": {"msg_id": 2, "size": 1048576, "sha256": "6a9cdbe994d65001eda3140c7c8b887e468297edce888d7d00f8cbea89d38037"},
+    "20mb": {"msg_id": 3, "size": 20971520, "sha256": "effe8801748924d8ea366a99c2fab681dacd804a363497b2ba335c40ec1047bf"},
 }
 
 # Per-file download timeouts (seconds).
@@ -53,7 +70,28 @@ DOWNLOAD_TIMEOUTS = {"1mb": 60, "20mb": 300, "100mb": 900}
 # Minimum acceptable throughput (MB/s) for files >= 20 MB.
 # The DRS delay bug (v3.5.0) throttled downloads to ~2 MB/s.
 # Set conservatively — if even this floor is missed, something is broken.
-MIN_THROUGHPUT_MBPS = float(os.environ.get("MIN_THROUGHPUT_MBPS", "0.5"))
+# Test DC is inherently slower (~0.2 MB/s) than production (~2+ MB/s).
+PROD_MIN_THROUGHPUT_MBPS = float(os.environ.get("MIN_THROUGHPUT_MBPS", "0.5"))
+TEST_DC_MIN_THROUGHPUT_MBPS = float(os.environ.get("MIN_THROUGHPUT_MBPS", "0.1"))
+
+
+def _patch_mtproxy_test_dc():
+    """Patch MTProxy header to add 10000 to dc_id.
+
+    The proxy uses dc_id >= 10000 to route to test DCs. Telethon encodes
+    the session's dc_id (2) in the MTProxy header, but we need 10002.
+    This patch transparently adds the offset so the proxy routes to the
+    correct test DC without modifying the session itself.
+    """
+    from telethon.network.connection.tcpmtproxy import MTProxyIO
+
+    _orig = MTProxyIO.init_header
+
+    @staticmethod
+    def _patched(secret, dc_id, packet_codec):
+        return _orig(secret, dc_id + 10000, packet_codec)
+
+    MTProxyIO.init_header = _patched
 
 
 def _patch_telethon_faketls():
@@ -228,7 +266,8 @@ async def _connect_and_auth(client, label, bot_token=None):
                 raise
 
 
-async def test_obfs2_all(host, port, secret, bot_token="", session_str=""):
+async def test_obfs2_all(host, port, secret, bot_token="", session_str="",
+                        test_files=None):
     """Run all obfs2 tests with a single client connection."""
     from telethon import TelegramClient
     from telethon.network.connection import (
@@ -255,7 +294,10 @@ async def test_obfs2_all(host, port, secret, bot_token="", session_str=""):
 
         print(f"[obfs2] get_me OK: id={me.id}")
 
-        throughputs = await _download_test_files(client, "obfs2")
+        if test_files:
+            throughputs = await _download_test_files(client, "obfs2")
+        else:
+            throughputs = {}
         has_failure = any(v is None for v in throughputs.values())
         return not has_failure, throughputs
     except Exception as e:
@@ -269,7 +311,7 @@ async def test_obfs2_all(host, port, secret, bot_token="", session_str=""):
 
 
 async def test_faketls_all(host, port, secret, domain,
-                           bot_token="", session_str=""):
+                           bot_token="", session_str="", test_files=None):
     """Run all fake-TLS tests with a single client connection."""
     try:
         from TelethonFakeTLS import ConnectionTcpMTProxyFakeTLS
@@ -303,7 +345,10 @@ async def test_faketls_all(host, port, secret, domain,
 
         print(f"[fake-tls] get_me OK: id={me.id}")
 
-        throughputs = await _download_test_files(client, "fake-tls")
+        if test_files:
+            throughputs = await _download_test_files(client, "fake-tls")
+        else:
+            throughputs = {}
         has_failure = any(v is None for v in throughputs.values())
         return not has_failure, throughputs
     except Exception as e:
@@ -317,10 +362,13 @@ async def test_faketls_all(host, port, secret, domain,
 
 
 def main():
+    test_session = os.environ.get("TG_TEST_SESSION", "")
     bot_token = os.environ.get("TG_BOT_TOKEN", "")
     session_str = os.environ.get("TG_STRING_SESSION", "")
-    if not bot_token and not session_str:
-        print("ERROR: TG_BOT_TOKEN or TG_STRING_SESSION required")
+
+    if not test_session and not bot_token and not session_str:
+        print("ERROR: TG_TEST_SESSION, TG_BOT_TOKEN, or "
+              "TG_STRING_SESSION required")
         sys.exit(1)
 
     secret = os.environ.get("TELEPROXY_SECRET", "")
@@ -333,27 +381,54 @@ def main():
     tls_port = int(os.environ.get("DIRECT_TLS_PORT", "9443"))
     domain = os.environ.get("EE_DOMAIN", "ya.ru")
 
-    mode = "bot" if bot_token else "user session"
+    # Determine auth mode and select test files accordingly.
+    if test_session:
+        mode = "test DC session"
+        session_str = test_session
+        bot_token = ""
+        _patch_mtproxy_test_dc()
+        test_files = TEST_DC_FILES
+        channel_id = TEST_DC_CHANNEL_ID
+        min_tp = TEST_DC_MIN_THROUGHPUT_MBPS
+    elif bot_token:
+        mode = "bot"
+        test_files = PROD_TEST_FILES
+        channel_id = PROD_CHANNEL_ID
+        min_tp = PROD_MIN_THROUGHPUT_MBPS
+    else:
+        mode = "user session"
+        test_files = PROD_TEST_FILES
+        channel_id = PROD_CHANNEL_ID
+        min_tp = PROD_MIN_THROUGHPUT_MBPS
+
+    # Update the globals used by download helper.
+    global TEST_FILES, TEST_CHANNEL_ID, MIN_THROUGHPUT_MBPS
+    TEST_FILES = test_files
+    TEST_CHANNEL_ID = channel_id
+    MIN_THROUGHPUT_MBPS = min_tp
+
     print(f"=== Direct Mode E2E Tests ({mode}) ===\n")
 
     # Test 1: obfuscated2 (control — no DRS delays)
     obfs2_ok, obfs2_tp = asyncio.run(
         test_obfs2_all(host, obfs2_port, secret,
-                       bot_token=bot_token, session_str=session_str)
+                       bot_token=bot_token, session_str=session_str,
+                       test_files=test_files)
     )
     print()
 
     # Test 2: fake-TLS (exercises DRS delays)
     tls_ok, tls_tp = asyncio.run(
         test_faketls_all(host, tls_port, secret, domain,
-                         bot_token=bot_token, session_str=session_str)
+                         bot_token=bot_token, session_str=session_str,
+                         test_files=test_files)
     )
 
     # Compare throughputs: fake-TLS must not be dramatically slower than obfs2.
     # If fake-TLS is < 50% of obfs2 for the same file, DRS delays are the cause.
     print("\n=== Throughput Comparison ===")
     comparison_ok = True
-    for label in TEST_FILES:
+    for label in test_files:
         o = obfs2_tp.get(label)
         t = tls_tp.get(label)
         if o is None or t is None:

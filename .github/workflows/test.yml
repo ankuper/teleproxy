@@ -185,8 +185,9 @@ jobs:
 
     - name: Start Direct-Mode Proxies
       run: |
-        echo "Checking connectivity to Telegram DC (149.154.167.51:443)..."
-        nc -zv 149.154.167.51 443 || echo "WARNING: Cannot reach Telegram DC"
+        echo "Checking connectivity to Telegram DCs..."
+        nc -zv 149.154.167.51 443 || echo "WARNING: Cannot reach production DC 2"
+        nc -zv 149.154.167.40 443 || echo "WARNING: Cannot reach test DC 2"
 
         mkdir -p teleproxy-run
         cp objs/bin/teleproxy teleproxy-run/
@@ -221,6 +222,7 @@ jobs:
 
     - name: Run Direct Mode E2E Tests
       env:
+        TG_TEST_SESSION: ${{ secrets.TG_TEST_SESSION }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
       run: |
         source .venv/bin/activate
