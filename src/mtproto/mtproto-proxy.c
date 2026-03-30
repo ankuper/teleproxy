@@ -419,6 +419,9 @@ struct worker_stats {
   long long drs_delays_applied;
   long long drs_delays_skipped;
 
+  long long transport_errors_received;
+  long long quickack_packets_received;
+
   long long per_secret_connections[16];
   long long per_secret_connections_created[16];
   long long per_secret_connections_rejected[16];
@@ -440,6 +443,8 @@ long long tot_forwarded_simple_acks, dropped_simple_acks;
 long long mtproto_proxy_errors;
 long long direct_dc_connections_created, direct_dc_connections_active;
 long long direct_dc_connections_failed, direct_dc_connections_dc_closed;
+long long transport_errors_received;
+long long quickack_packets_received;
 
 char proxy_tag[16];
 int proxy_tag_set;
@@ -483,6 +488,8 @@ static void update_local_stats_copy (struct worker_stats *S) {
   UPD (http_bad_headers);
   UPD (drs_delays_applied);
   UPD (drs_delays_skipped);
+  UPD (transport_errors_received);
+  UPD (quickack_packets_received);
   { int _i; for (_i = 0; _i < 16; _i++) {
     UPD (per_secret_connections[_i]);
     UPD (per_secret_connections_created[_i]);
@@ -568,6 +575,8 @@ static inline void add_stats (struct worker_stats *W) {
   UPD (http_bad_headers);
   UPD (drs_delays_applied);
   UPD (drs_delays_skipped);
+  UPD (transport_errors_received);
+  UPD (quickack_packets_received);
   { int _i; for (_i = 0; _i < 16; _i++) {
     UPD (per_secret_connections[_i]);
     UPD (per_secret_connections_created[_i]);
@@ -702,6 +711,8 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
 	     "drs_delays_skipped\t%lld\n"
 	     "drs_weibull_k\t%.6f\n"
 	     "drs_weibull_lambda\t%.6f\n"
+	     "transport_errors_received\t%lld\n"
+	     "quickack_packets_received\t%lld\n"
 	     "version\t" VERSION_STR " compiled at " __DATE__ " " __TIME__ " by gcc " __VERSION__ " "
 #ifdef __LP64__
 	     "64-bit"
@@ -778,7 +789,9 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
 	     S(drs_delays_applied),
 	     S(drs_delays_skipped),
 	     drs_delay_get_k (),
-	     drs_delay_get_lambda ()
+	     drs_delay_get_lambda (),
+	     S(transport_errors_received),
+	     S(quickack_packets_received)
   );
 
   { int _sc = tcp_rpcs_get_ext_secret_count();
@@ -890,7 +903,13 @@ void mtfront_prepare_prometheus_stats (stats_buffer_t *sb) {
 	     "teleproxy_drs_weibull_k %.6f\n"
 	     "# HELP teleproxy_drs_weibull_lambda Current Weibull scale parameter (ms).\n"
 	     "# TYPE teleproxy_drs_weibull_lambda gauge\n"
-	     "teleproxy_drs_weibull_lambda %.6f\n",
+	     "teleproxy_drs_weibull_lambda %.6f\n"
+	     "# HELP teleproxy_transport_errors_total Transport-level error codes received from DCs.\n"
+	     "# TYPE teleproxy_transport_errors_total counter\n"
+	     "teleproxy_transport_errors_total %lld\n"
+	     "# HELP teleproxy_quickack_packets_total Packets received with quick ACK flag set.\n"
+	     "# TYPE teleproxy_quickack_packets_total counter\n"
+	     "teleproxy_quickack_packets_total %lld\n",
 	     S(get_queries),
 	     S(tot_forwarded_queries),
 	     S(expired_forwarded_queries),
@@ -915,7 +934,9 @@ void mtfront_prepare_prometheus_stats (stats_buffer_t *sb) {
 	     S(drs_delays_applied),
 	     S(drs_delays_skipped),
 	     drs_delay_get_k (),
-	     drs_delay_get_lambda ()
+	     drs_delay_get_lambda (),
+	     S(transport_errors_received),
+	     S(quickack_packets_received)
   );
 
   /* gauges */

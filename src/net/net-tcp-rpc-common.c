@@ -156,16 +156,20 @@ int tcp_rpc_flush_packet (connection_job_t C) {
   return CONN_INFO(C)->type->flush (C);
 }
 
+/* Full transport mode: seq_no + CRC32 envelope.
+   Used by the RPC client (proxy ↔ DC backend internal protocol).
+   NOT reached for client-facing obfuscated2/TLS connections, which always
+   have RPC_F_COMPACT or RPC_F_MEDIUM set during the handshake. */
 int tcp_rpc_write_packet (connection_job_t C, struct raw_message *raw) {
   int Q[2];
   if (!(TCP_RPC_DATA(C)->flags & (RPC_F_COMPACT | RPC_F_MEDIUM))) {
     Q[0] = raw->total_bytes + 12;
     Q[1] = TCP_RPC_DATA(C)->out_packet_num ++;
-  
+
     rwm_push_data_front (raw, Q, 8);
     unsigned crc32 = rwm_custom_crc32 (raw, raw->total_bytes, TCP_RPC_DATA(C)->custom_crc_partial);
     rwm_push_data (raw, &crc32, 4);
-  
+
     rwm_union (&CONN_INFO(C)->out, raw);
   }
 
@@ -187,6 +191,8 @@ int tcp_rpc_write_packet_compact (connection_job_t C, struct raw_message *raw) {
   }
     
   if (!(TCP_RPC_DATA(C)->flags & (RPC_F_COMPACT | RPC_F_MEDIUM))) {
+    /* Fallback to full transport mode (seq_no + CRC32).
+       Dead path for ext-server: obfuscated2/TLS always sets COMPACT or MEDIUM. */
     return tcp_rpc_write_packet (C, raw);
   }
 

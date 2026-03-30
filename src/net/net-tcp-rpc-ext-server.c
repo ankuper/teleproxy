@@ -183,6 +183,8 @@ extern long long direct_dc_connections_created, direct_dc_connections_active;
 extern long long direct_dc_connections_failed, direct_dc_connections_dc_closed;
 extern long long per_secret_connections[16], per_secret_connections_created[16];
 extern long long per_secret_connections_rejected[16];
+extern long long transport_errors_received;
+extern long long quickack_packets_received;
 
 static int tcp_direct_client_parse_execute (connection_job_t C);
 static int tcp_direct_dc_parse_execute (connection_job_t C);
@@ -277,6 +279,19 @@ static int tcp_direct_client_parse_execute (connection_job_t C) {
 }
 
 static int tcp_direct_dc_parse_execute (connection_job_t C) {
+  struct connection_info *c = CONN_INFO(C);
+
+  /* Detect transport error codes from DC: a single 4-byte negative int
+     (e.g. -404 "auth key not found", -429 "flood", -444 "invalid DC") */
+  if (c->in.total_bytes == 4) {
+    int code;
+    if (rwm_fetch_lookup (&c->in, &code, 4) == 4 && code < 0 && code > -1000) {
+      int target_dc = TCP_RPC_DATA(C)->extra_int4;
+      kprintf ("direct mode: DC %d sent transport error %d\n", target_dc, code);
+      transport_errors_received++;
+    }
+  }
+
   return tcp_direct_relay (C);
 }
 
@@ -1793,16 +1808,26 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
 
     int packet_len_bytes = 4;
     if (D->flags & RPC_F_MEDIUM) {
-      // packet len in `medium` mode
-      //if (D->crypto_flags & RPCF_QUICKACK) {
-        D->flags = (D->flags & ~RPC_F_QUICKACK) | (packet_len & RPC_F_QUICKACK);
-        packet_len &= ~RPC_F_QUICKACK;
-      //}
+      /* Transport error codes: DCs send a raw negative 4-byte int
+         (e.g. -404, -429) in place of a normal packet length.
+         Detect before QUICKACK masking destroys the sign. */
+      if (packet_len < 0 && packet_len > -1000) {
+        vkprintf (1, "transport error %d from %s:%d\n", packet_len, show_remote_ip (C), c->remote_port);
+        transport_errors_received++;
+        fail_connection (C, -1);
+        return 0;
+      }
+      D->flags = (D->flags & ~RPC_F_QUICKACK) | (packet_len & RPC_F_QUICKACK);
+      packet_len &= ~RPC_F_QUICKACK;
+      if (D->flags & RPC_F_QUICKACK) {
+        quickack_packets_received++;
+      }
     } else {
-      // packet len in `compact` mode
+      /* compact mode */
       if (packet_len & 0x80) {
         D->flags |= RPC_F_QUICKACK;
         packet_len &= ~0x80;
+        quickack_packets_received++;
       } else {
         D->flags &= ~RPC_F_QUICKACK;
       }
