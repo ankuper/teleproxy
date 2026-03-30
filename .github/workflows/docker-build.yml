@@ -41,7 +41,9 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Log in to Docker Hub
-      if: github.event_name != 'pull_request' && secrets.DOCKERHUB_TOKEN != ''
+      if: github.event_name != 'pull_request' && env.HAS_DOCKERHUB == 'true'
+      env:
+        HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_TOKEN != '' }}
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -49,11 +51,13 @@ jobs:
 
     - name: Extract metadata
       id: meta
+      env:
+        HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_TOKEN != '' }}
       uses: docker/metadata-action@v5
       with:
         images: |
           ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          ${{ secrets.DOCKERHUB_TOKEN && env.DOCKERHUB_IMAGE || '' }}
+          ${{ env.HAS_DOCKERHUB == 'true' && env.DOCKERHUB_IMAGE || '' }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
