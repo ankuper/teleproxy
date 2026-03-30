@@ -8,6 +8,16 @@ curl http://localhost:8888/stats
 
 Requires `--http-stats` flag. Accessible from private networks only (loopback, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`).
 
+### Custom Network Access
+
+To allow access from overlay/VPN networks (Tailscale, WireGuard, Netbird), use `--stats-allow-net`:
+
+```bash
+./teleproxy ... --stats-allow-net 100.64.0.0/10 --stats-allow-net fd00::/8
+```
+
+Repeatable — specify multiple times for multiple ranges. Both IPv4 and IPv6 CIDR notation supported.
+
 ## Prometheus Metrics
 
 ```bash

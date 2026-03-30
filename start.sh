@@ -172,6 +172,17 @@ if [ -n "$IP_ALLOWLIST" ]; then
     CMD="$CMD --ip-allowlist $IP_ALLOWLIST"
 fi
 
+if [ -n "$STATS_ALLOW_NET" ]; then
+    _save_ifs="$IFS"
+    IFS=','
+    for _net in $STATS_ALLOW_NET; do
+        IFS="$_save_ifs"
+        _net=$(printf '%s' "$_net" | tr -d '[:space:]')
+        [ -n "$_net" ] && CMD="$CMD --stats-allow-net $_net"
+    done
+    IFS="$_save_ifs"
+fi
+
 if [ "$DIRECT_MODE" = "true" ]; then
     CMD="$CMD --direct -M $WORKERS -u teleproxy $ORIG_ARGS"
     echo "Direct mode: connecting directly to Telegram DCs (no ME relay)"

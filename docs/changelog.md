@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.1.0
+
+- `--stats-allow-net CIDR` flag to extend stats endpoint access beyond RFC1918 ranges (repeatable). Docker: `STATS_ALLOW_NET=100.64.0.0/10,fd00::/8`
+
 ## 4.0.0
 
 Rebrand to Teleproxy. Binary renamed from `mtproto-proxy` to `teleproxy`.
