@@ -181,15 +181,20 @@ extern int ipv6_enabled;
 extern int workers;
 extern long long direct_dc_connections_created, direct_dc_connections_active;
 extern long long direct_dc_connections_failed, direct_dc_connections_dc_closed;
+extern long long direct_dc_retries;
 extern long long per_secret_connections[16], per_secret_connections_created[16];
 extern long long per_secret_connections_rejected[16];
 extern long long transport_errors_received;
 extern long long quickack_packets_received;
 
+#define DIRECT_MAX_RETRIES 3
+#define DIRECT_RETRY_BASE_SEC 0.2  /* 200ms, 400ms, 800ms */
+
 static int tcp_direct_client_parse_execute (connection_job_t C);
 static int tcp_direct_dc_parse_execute (connection_job_t C);
 static int tcp_direct_dc_connected (connection_job_t C);
 static int tcp_direct_close (connection_job_t C, int who);
+static int tcp_direct_client_alarm (connection_job_t C);
 
 /* Client-side relay: keeps the client's AES-CTR crypto active */
 conn_type_t ct_direct_client = {
@@ -200,6 +205,7 @@ conn_type_t ct_direct_client = {
   .close = tcp_direct_close,
   .write_packet = tcp_proxy_pass_write_packet,
   .connected = server_noop,
+  .alarm = tcp_direct_client_alarm,
   .crypto_init = aes_crypto_ctr128_init,
   .crypto_free = aes_crypto_free,
   .crypto_encrypt_output = cpu_tcp_aes_crypto_ctr128_encrypt_output,
@@ -265,6 +271,10 @@ static int tcp_direct_relay (connection_job_t C) {
 static int tcp_direct_client_parse_execute (connection_job_t C) {
   struct connection_info *c = CONN_INFO(C);
   if (!c->extra) {
+    /* No DC connection — either retry pending or permanent failure */
+    if (TCP_RPC_DATA(C)->extra_int > 0) {
+      return NEED_MORE_BYTES;  /* retry timer will fire */
+    }
     fail_connection (C, -1);
     return 0;
   }
@@ -295,6 +305,9 @@ static int tcp_direct_dc_parse_execute (connection_job_t C) {
   return tcp_direct_relay (C);
 }
 
+static int direct_schedule_retry (connection_job_t C, int target_dc, int attempt);
+static void direct_retry_dc_connection (connection_job_t C);
+
 static int tcp_direct_close (connection_job_t C, int who) {
   struct connection_info *c = CONN_INFO(C);
   int is_client = (c->type == &ct_direct_client || c->type == &ct_direct_client_drs);
@@ -305,6 +318,23 @@ static int tcp_direct_close (connection_job_t C, int who) {
   vkprintf (1, "direct: closing %s connection #%d (DC %d) after %.1fs, %s:%d -> %s:%d, who=%d\n",
             is_client ? "client" : "DC", c->fd, target_dc, duration,
             show_our_ip (C), c->our_port, show_remote_ip (C), c->remote_port, who);
+
+  /* DC connection failed before handshake completed — eligible for retry */
+  if (is_dc && c->extra && !c->crypto) {
+    connection_job_t client = (connection_job_t) c->extra;
+    int attempt = TCP_RPC_DATA(client)->extra_int;
+    if (attempt < DIRECT_MAX_RETRIES) {
+      vkprintf (1, "direct mode: DC %d connection failed (async), scheduling retry %d/%d\n",
+                target_dc, attempt + 1, DIRECT_MAX_RETRIES);
+      /* Detach client from this dying DC connection */
+      CONN_INFO(client)->extra = NULL;
+      job_t E = PTR_MOVE (c->extra);
+      direct_dc_connections_failed++;
+      direct_schedule_retry (client, target_dc, attempt);
+      job_decref (JOB_REF_PASS (E));
+      return cpu_server_close_connection (C, who);
+    }
+  }
 
   if (is_client && direct_dc_connections_active > 0) {
     direct_dc_connections_active--;
@@ -323,6 +353,17 @@ static int tcp_direct_close (connection_job_t C, int who) {
     job_decref (JOB_REF_PASS (E));
   }
   return cpu_server_close_connection (C, who);
+}
+
+/* Alarm handler for non-DRS direct client connections (obfs2).
+   Handles retry when DC connection is not yet established. */
+static int tcp_direct_client_alarm (connection_job_t C) {
+  struct connection_info *c = CONN_INFO(C);
+  if (!c->extra && TCP_RPC_DATA(C)->extra_int > 0) {
+    direct_retry_dc_connection (C);
+    return 0;
+  }
+  return 0;
 }
 
 /* Called when the outbound TCP connection to the DC is established.
@@ -413,33 +454,122 @@ static int tcp_direct_dc_connected (connection_job_t C) {
   return 0;
 }
 
+/* Try to establish a DC connection using one of the entry's addresses.
+   Returns the connection job on success, or NULL if all addresses failed. */
+static job_t direct_try_dc_addrs (connection_job_t C, const struct dc_entry *dc, int target_dc) {
+  static const unsigned char zero_ipv6[16] = {};
+
+  for (int i = 0; i < dc->addr_count; i++) {
+    const struct dc_addr *addr = &dc->addrs[i];
+    int has_ipv6 = memcmp (addr->ipv6, zero_ipv6, 16) != 0;
+    int use_ipv6 = ipv6_enabled && has_ipv6;
+
+    if (use_ipv6) {
+      char addr_buf[INET6_ADDRSTRLEN];
+      inet_ntop (AF_INET6, addr->ipv6, addr_buf, sizeof (addr_buf));
+      vkprintf (1, "direct mode: trying DC %d addr %d/%d ([%s]:%d) via IPv6\n",
+                target_dc, i + 1, dc->addr_count, addr_buf, addr->port);
+    } else if (addr->ipv4) {
+      vkprintf (1, "direct mode: trying DC %d addr %d/%d (%s:%d)\n",
+                target_dc, i + 1, dc->addr_count,
+                inet_ntoa (*(struct in_addr *)&addr->ipv4), addr->port);
+    } else {
+      continue;  /* no usable address */
+    }
+
+    int cfd;
+    if (use_ipv6) {
+      cfd = client_socket_ipv6 (addr->ipv6, addr->port, SM_IPV6);
+    } else {
+      cfd = client_socket (addr->ipv4, addr->port, 0);
+    }
+    if (cfd < 0) {
+      vkprintf (1, "direct mode: DC %d addr %d/%d connect failed: %m\n",
+                target_dc, i + 1, dc->addr_count);
+      continue;
+    }
+
+    job_incref (C);
+    job_t EJ;
+    if (use_ipv6) {
+      EJ = alloc_new_connection (cfd, NULL, NULL, ct_outbound, &ct_direct_dc, C,
+                                  0, (unsigned char *)addr->ipv6, addr->port);
+    } else {
+      EJ = alloc_new_connection (cfd, NULL, NULL, ct_outbound, &ct_direct_dc, C,
+                                  ntohl (addr->ipv4), NULL, addr->port);
+    }
+    if (!EJ) {
+      vkprintf (1, "direct mode: DC %d addr %d/%d alloc_new_connection failed\n",
+                target_dc, i + 1, dc->addr_count);
+      job_decref_f (C);
+      continue;
+    }
+    return EJ;
+  }
+  return NULL;
+}
+
+static int direct_schedule_retry (connection_job_t C, int target_dc, int attempt) {
+  if (attempt >= DIRECT_MAX_RETRIES) {
+    kprintf ("direct mode: all %d retries exhausted for DC %d\n", DIRECT_MAX_RETRIES, target_dc);
+    direct_dc_connections_failed++;
+    fail_connection (C, -27);
+    return 0;
+  }
+  TCP_RPC_DATA(C)->extra_int = attempt + 1;
+  double backoff = DIRECT_RETRY_BASE_SEC * (1 << attempt);
+  job_timer_insert (C, precise_now + backoff);
+  direct_dc_retries++;
+  vkprintf (1, "direct mode: DC %d connect failed, retry %d/%d in %.0fms\n",
+            target_dc, attempt + 1, DIRECT_MAX_RETRIES, backoff * 1000.0);
+  return 0;
+}
+
+static void direct_retry_dc_connection (connection_job_t C) {
+  struct connection_info *c = CONN_INFO(C);
+  int target_dc = TCP_RPC_DATA(C)->extra_int4;
+  int attempt = TCP_RPC_DATA(C)->extra_int;
+
+  const struct dc_entry *dc = direct_dc_lookup (target_dc);
+  if (!dc) {
+    kprintf ("direct mode: DC %d not found during retry\n", target_dc);
+    direct_dc_connections_failed++;
+    TCP_RPC_DATA(C)->extra_int = 0;
+    fail_connection (C, -1);
+    return;
+  }
+
+  job_t EJ = direct_try_dc_addrs (C, dc, target_dc);
+  if (EJ) {
+    TCP_RPC_DATA(EJ)->extra_int4 = target_dc;
+    TCP_RPC_DATA(EJ)->extra_int3 = TCP_RPC_DATA(C)->extra_int3;
+    c->extra = job_incref (EJ);
+    CONN_INFO(EJ)->extra = job_incref (C);
+    TCP_RPC_DATA(C)->extra_int = 0;  /* clear retry state */
+    direct_dc_connections_created++;
+    direct_dc_connections_active++;
+    vkprintf (1, "direct mode: retry %d succeeded for DC %d\n", attempt, target_dc);
+    assert (CONN_INFO(EJ)->io_conn);
+    unlock_job (JOB_REF_PASS (EJ));
+    return;
+  }
+
+  /* All addresses failed again */
+  direct_dc_connections_failed++;
+  direct_schedule_retry (C, target_dc, attempt);
+}
+
 /* Route a client connection directly to a Telegram DC.
    Called after the obfuscated2 handshake is parsed and the target DC is known. */
 static int direct_connect_to_dc (connection_job_t C, int target_dc) {
   struct connection_info *c = CONN_INFO(C);
 
-  const struct dc_address *dc = direct_dc_lookup (target_dc);
+  const struct dc_entry *dc = direct_dc_lookup (target_dc);
   if (!dc) {
     kprintf ("direct mode: unknown DC %d, closing connection\n", target_dc);
     direct_dc_connections_failed++;
     fail_connection (C, -1);
     return 0;
-  }
-
-  static const unsigned char zero_ipv6[16] = {};
-  int use_ipv6 = ipv6_enabled && memcmp (dc->ipv6, zero_ipv6, 16) != 0;
-
-  if (use_ipv6) {
-    char addr_buf[INET6_ADDRSTRLEN];
-    inet_ntop (AF_INET6, dc->ipv6, addr_buf, sizeof (addr_buf));
-    vkprintf (1, "direct mode: routing client (fd=%d) to DC %d ([%s]:%d) via IPv6\n",
-              c->fd, target_dc, addr_buf, dc->port);
-  } else {
-    if (ipv6_enabled) {
-      kprintf ("direct mode: DC %d has no IPv6 address, falling back to IPv4\n", target_dc);
-    }
-    vkprintf (1, "direct mode: routing client (fd=%d) to DC %d (%s:%d)\n",
-              c->fd, target_dc, inet_ntoa (*(struct in_addr *)&dc->ipv4), dc->port);
   }
 
   static int direct_types_checked;
@@ -450,42 +580,7 @@ static int direct_connect_to_dc (connection_job_t C, int target_dc) {
     direct_types_checked = 1;
   }
 
-  int cfd;
-  if (use_ipv6) {
-    cfd = client_socket_ipv6 (dc->ipv6, dc->port, SM_IPV6);
-  } else {
-    cfd = client_socket (dc->ipv4, dc->port, 0);
-  }
-  if (cfd < 0) {
-    kprintf ("direct mode: failed to connect to DC %d: %m\n", target_dc);
-    direct_dc_connections_failed++;
-    fail_connection (C, -27);
-    return 0;
-  }
-
-  job_incref (C);
-  job_t EJ;
-  if (use_ipv6) {
-    EJ = alloc_new_connection (cfd, NULL, NULL, ct_outbound, &ct_direct_dc, C,
-                                0, (unsigned char *)dc->ipv6, dc->port);
-  } else {
-    EJ = alloc_new_connection (cfd, NULL, NULL, ct_outbound, &ct_direct_dc, C,
-                                ntohl (dc->ipv4), NULL, dc->port);
-  }
-
-  if (!EJ) {
-    kprintf ("direct mode: failed to create DC connection for DC %d\n", target_dc);
-    direct_dc_connections_failed++;
-    job_decref_f (C);
-    fail_connection (C, -37);
-    return 0;
-  }
-
-  /* Store target DC and client transport tag for the connected callback */
-  TCP_RPC_DATA(EJ)->extra_int4 = target_dc;
-  TCP_RPC_DATA(EJ)->extra_int3 = TCP_RPC_DATA(C)->extra_int3;  /* client transport tag */
-
-  /* Switch client to direct relay mode (keeps existing AES crypto) */
+  /* Switch client type early so alarm handler is available for retries */
   if (c->flags & C_IS_TLS) {
     c->type = &ct_direct_client_drs;
     struct drs_state *drs = DRS_STATE (C);
@@ -496,6 +591,18 @@ static int direct_connect_to_dc (connection_job_t C, int target_dc) {
   } else {
     c->type = &ct_direct_client;
   }
+
+  job_t EJ = direct_try_dc_addrs (C, dc, target_dc);
+  if (!EJ) {
+    /* All addresses failed synchronously — schedule retry */
+    direct_dc_connections_failed++;
+    return direct_schedule_retry (C, target_dc, 0);
+  }
+
+  /* Store target DC and client transport tag for the connected callback */
+  TCP_RPC_DATA(EJ)->extra_int4 = target_dc;
+  TCP_RPC_DATA(EJ)->extra_int3 = TCP_RPC_DATA(C)->extra_int3;  /* client transport tag */
+
   c->extra = job_incref (EJ);
 
   /* Link DC connection back to client */
@@ -1365,7 +1472,14 @@ int tcp_rpcs_ext_alarm (connection_job_t C) {
 /* DRS alarm handler: handles both handshake timeout and inter-record delay resume.
    Both JS_RUN and JS_ALARM run on the NET-CPU thread, so calling read_write is safe. */
 static int tcp_rpcs_ext_drs_alarm (connection_job_t C) {
+  struct connection_info *c = CONN_INFO (C);
   struct tcp_rpc_data *D = TCP_RPC_DATA (C);
+
+  /* Direct client retry: DC connection not yet established */
+  if (c->type == &ct_direct_client_drs && !c->extra && D->extra_int > 0) {
+    direct_retry_dc_connection (C);
+    return 0;
+  }
 
   /* Handshake timeout (pre-handshake state) */
   if (D->in_packet_num == -3 && default_domain_info != NULL) {
@@ -1373,7 +1487,6 @@ static int tcp_rpcs_ext_drs_alarm (connection_job_t C) {
   }
 
   /* DRS delay resume: timer fired, process next record */
-  struct connection_info *c = CONN_INFO (C);
   if (c->flags & C_IS_TLS) {
     struct drs_state *drs = DRS_STATE (C);
     if (drs->delay_pending) {

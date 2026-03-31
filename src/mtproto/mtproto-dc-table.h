@@ -22,14 +22,30 @@
 
 #include <netinet/in.h>
 
-struct dc_address {
-  int dc_id;
-  in_addr_t ipv4;             /* network byte order */
+struct dc_addr {
+  in_addr_t ipv4;             /* network byte order, 0 if unavailable */
   unsigned char ipv6[16];     /* network byte order, all-zero if unavailable */
   int port;
+};
+
+#define DC_MAX_ADDRS 4
+
+struct dc_entry {
+  int dc_id;
+  int addr_count;
+  struct dc_addr addrs[DC_MAX_ADDRS];
 };
 
 /* Look up a Telegram DC by its identifier.
    Handles negative dc_id (media DCs) and dc_id >= 10000 (test DCs).
    Returns NULL if the DC is unknown. */
-const struct dc_address *direct_dc_lookup (int dc_id);
+const struct dc_entry *direct_dc_lookup (int dc_id);
+
+/* Add or replace a DC address via --dc-override.
+   Overrides for a dc_id replace the built-in addresses entirely.
+   Returns 0 on success, -1 on error (bad host or table full). */
+int direct_dc_override (int dc_id, const char *host, int port);
+
+/* Probe IPv6 connectivity by attempting a non-blocking connect to a known DC.
+   Returns 1 if IPv6 appears to work, 0 otherwise. */
+int direct_dc_probe_ipv6 (void);

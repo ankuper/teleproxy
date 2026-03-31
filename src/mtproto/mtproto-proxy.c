@@ -410,6 +410,7 @@ struct worker_stats {
   long long mtproto_proxy_errors;
   long long direct_dc_connections_created, direct_dc_connections_active;
   long long direct_dc_connections_failed, direct_dc_connections_dc_closed;
+  long long direct_dc_retries;
 
   long long connections_failed_lru, connections_failed_flood;
 
@@ -443,6 +444,7 @@ long long tot_forwarded_simple_acks, dropped_simple_acks;
 long long mtproto_proxy_errors;
 long long direct_dc_connections_created, direct_dc_connections_active;
 long long direct_dc_connections_failed, direct_dc_connections_dc_closed;
+long long direct_dc_retries;
 long long transport_errors_received;
 long long quickack_packets_received;
 
@@ -480,6 +482,7 @@ static void update_local_stats_copy (struct worker_stats *S) {
   UPD (direct_dc_connections_active);
   UPD (direct_dc_connections_failed);
   UPD (direct_dc_connections_dc_closed);
+  UPD (direct_dc_retries);
   UPD (connections_failed_lru);
   UPD (connections_failed_flood);
   UPD (ext_connections);
@@ -567,6 +570,7 @@ static inline void add_stats (struct worker_stats *W) {
   UPD (direct_dc_connections_active);
   UPD (direct_dc_connections_failed);
   UPD (direct_dc_connections_dc_closed);
+  UPD (direct_dc_retries);
   UPD (connections_failed_lru);
   UPD (connections_failed_flood);
   UPD (ext_connections);
@@ -706,6 +710,7 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
 	     "direct_dc_connections_active\t%lld\n"
 	     "direct_dc_connections_failed\t%lld\n"
 	     "direct_dc_connections_dc_closed\t%lld\n"
+	     "direct_dc_retries\t%lld\n"
 	     "drs_delays_enabled\t%d\n"
 	     "drs_delays_applied\t%lld\n"
 	     "drs_delays_skipped\t%lld\n"
@@ -785,6 +790,7 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
 	     S(direct_dc_connections_active),
 	     S(direct_dc_connections_failed),
 	     S(direct_dc_connections_dc_closed),
+	     S(direct_dc_retries),
 	     drs_delays_enabled,
 	     S(drs_delays_applied),
 	     S(drs_delays_skipped),
@@ -892,6 +898,9 @@ void mtfront_prepare_prometheus_stats (stats_buffer_t *sb) {
 	     "# HELP teleproxy_direct_dc_connections_dc_closed_total Direct DC connections closed by the DC side.\n"
 	     "# TYPE teleproxy_direct_dc_connections_dc_closed_total counter\n"
 	     "teleproxy_direct_dc_connections_dc_closed_total %lld\n"
+	     "# HELP teleproxy_direct_dc_retries_total DC connection retry attempts.\n"
+	     "# TYPE teleproxy_direct_dc_retries_total counter\n"
+	     "teleproxy_direct_dc_retries_total %lld\n"
 	     "# HELP teleproxy_drs_delays_total Total inter-record delays injected.\n"
 	     "# TYPE teleproxy_drs_delays_total counter\n"
 	     "teleproxy_drs_delays_total %lld\n"
@@ -931,6 +940,7 @@ void mtfront_prepare_prometheus_stats (stats_buffer_t *sb) {
 	     S(direct_dc_connections_created),
 	     S(direct_dc_connections_failed),
 	     S(direct_dc_connections_dc_closed),
+	     S(direct_dc_retries),
 	     S(drs_delays_applied),
 	     S(drs_delays_skipped),
 	     drs_delay_get_k (),
@@ -2639,6 +2649,62 @@ int f_parse_option (int val) {
       return 2;
     }
     break;
+  case 2005:
+    {
+      /* Parse dc_id:host:port or dc_id:[ipv6]:port */
+      char buf[256];
+      int len = strlen (optarg);
+      if (len >= (int)sizeof (buf)) {
+        kprintf ("--dc-override argument too long: %s\n", optarg);
+        return 2;
+      }
+      memcpy (buf, optarg, len + 1);
+
+      char *colon1 = strchr (buf, ':');
+      if (!colon1) {
+        kprintf ("--dc-override: expected dc_id:host:port, got %s\n", optarg);
+        return 2;
+      }
+      *colon1 = 0;
+      int dc_id = atoi (buf);
+      if (dc_id <= 0 || dc_id > 5) {
+        kprintf ("--dc-override: dc_id must be 1-5, got %s\n", buf);
+        return 2;
+      }
+
+      char *host_start = colon1 + 1;
+      char *port_str;
+      if (*host_start == '[') {
+        /* IPv6: [addr]:port */
+        char *bracket = strchr (host_start, ']');
+        if (!bracket || bracket[1] != ':') {
+          kprintf ("--dc-override: bad IPv6 format in %s\n", optarg);
+          return 2;
+        }
+        *bracket = 0;
+        host_start++;
+        port_str = bracket + 2;
+      } else {
+        /* IPv4: host:port */
+        char *last_colon = strrchr (host_start, ':');
+        if (!last_colon) {
+          kprintf ("--dc-override: expected host:port after dc_id in %s\n", optarg);
+          return 2;
+        }
+        *last_colon = 0;
+        port_str = last_colon + 1;
+      }
+      int port = atoi (port_str);
+      if (port <= 0 || port > 65535) {
+        kprintf ("--dc-override: bad port %s in %s\n", port_str, optarg);
+        return 2;
+      }
+      if (direct_dc_override (dc_id, host_start, port) < 0) {
+        kprintf ("--dc-override: failed to add %s (bad address or table full)\n", optarg);
+        return 2;
+      }
+    }
+    break;
   default:
     return -1;
   }
@@ -2661,6 +2727,7 @@ void mtfront_prepare_parse_options (void) {
   parse_option ("ip-allowlist", required_argument, 0, 2002, "path to file with CIDR ranges to exclusively allow");
   parse_option ("direct", no_argument, 0, 2003, "connect directly to Telegram DCs instead of through ME relays (incompatible with -P)");
   parse_option ("stats-allow-net", required_argument, 0, 2004, "CIDR range to allow stats access from, e.g. 100.64.0.0/10 (repeatable)");
+  parse_option ("dc-override", required_argument, 0, 2005, "override DC address: dc_id:host:port or dc_id:[ipv6]:port (repeatable, direct mode)");
 }
 
 void mtfront_parse_extra_args (int argc, char *argv[]) /* {{{ */ {
@@ -2724,6 +2791,12 @@ void mtfront_pre_init (void) {
   }
 
   ipv6_enabled = engine_check_ipv6_enabled ();
+  if (direct_mode && !ipv6_enabled) {
+    if (direct_dc_probe_ipv6 ()) {
+      vkprintf (0, "direct mode: IPv6 connectivity detected, enabling automatically\n");
+      ipv6_enabled = 1;
+    }
+  }
   int i, enable_ipv6 = ipv6_enabled ? SM_IPV6 : 0;
 
   for (i = 0; i < http_ports_num; i++) {

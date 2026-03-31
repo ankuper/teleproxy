@@ -355,9 +355,12 @@ def _check_proxy_stats(stats_port):
     dc_closed = stats.get("direct_dc_connections_dc_closed", 0)
     details["dc_connections_dc_closed"] = dc_closed
 
+    retries = stats.get("direct_dc_retries", 0)
+    details["dc_retries"] = retries
+
     if ok:
         print(f"  stats: OK — created={created}, active={active}, "
-              f"failed={failed}, dc_closed={dc_closed}")
+              f"failed={failed}, dc_closed={dc_closed}, retries={retries}")
 
     return ok, details
 

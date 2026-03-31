@@ -183,6 +183,17 @@ if [ -n "$STATS_ALLOW_NET" ]; then
     IFS="$_save_ifs"
 fi
 
+if [ -n "$DC_OVERRIDE" ]; then
+    _save_ifs="$IFS"
+    IFS=','
+    for _dc_entry in $DC_OVERRIDE; do
+        IFS="$_save_ifs"
+        _dc_entry=$(printf '%s' "$_dc_entry" | tr -d '[:space:]')
+        [ -n "$_dc_entry" ] && CMD="$CMD --dc-override $_dc_entry"
+    done
+    IFS="$_save_ifs"
+fi
+
 if [ "$DIRECT_MODE" = "true" ]; then
     CMD="$CMD --direct -M $WORKERS -u teleproxy $ORIG_ARGS"
     echo "Direct mode: connecting directly to Telegram DCs (no ME relay)"
