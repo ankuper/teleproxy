@@ -10,10 +10,13 @@ Proxy tests (ServerHello compliance, entropy) need TELEPROXY_HOST/PORT/SECRET.
 """
 import collections
 import hashlib
+import hmac as hmac_mod
 import math
 import os
+import socket
 import struct
 import sys
+import time
 
 from test_tls_e2e import (
     build_client_hello,
@@ -289,12 +292,45 @@ def test_server_hello_tls13_compliance():
         "EE_DOMAIN", os.environ.get("TLS_BACKEND_HOST", "172.30.0.10")
     )
 
+    # Build hello and extract session_id before sending (can't use _do_handshake
+    # because it builds its own hello with different random session_id)
     hello = build_client_hello(domain)
     sent_session_id = bytes(hello[44:76])
 
-    data, client_random = _do_handshake(host, port, secret_bytes)
+    hello_zeroed = bytearray(hello)
+    hello_zeroed[11:43] = b"\x00" * 32
+    expected = hmac_mod.new(secret_bytes, bytes(hello_zeroed), hashlib.sha256).digest()
+    timestamp = int(time.time())
+    ts_bytes = struct.pack("<I", timestamp)
+    xored_ts = bytes(a ^ b for a, b in zip(ts_bytes, expected[28:32]))
+    client_random = expected[:28] + xored_ts
+    hello[11:43] = client_random
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(10)
+    sock.connect((socket.gethostbyname(host), port))
+    sock.sendall(bytes(hello))
+
+    data = b""
+    expected_total = 0
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        try:
+            chunk = sock.recv(16384)
+            if not chunk:
+                break
+            data += chunk
+            if expected_total == 0 and len(data) >= 138:
+                enc_len = struct.unpack(">H", data[136:138])[0]
+                expected_total = 138 + enc_len
+            if expected_total > 0 and len(data) >= expected_total:
+                break
+        except socket.timeout:
+            break
+    sock.close()
+
     assert len(data) >= 138, f"Response too short: {len(data)} bytes"
-    assert _verify_server_hmac(data, client_random, secret_bytes), \
+    assert _verify_server_hmac(data, bytes(client_random), secret_bytes), \
         "HMAC mismatch — not a proxy-generated ServerHello"
 
     assert data[0:3] == b"\x16\x03\x03", \
