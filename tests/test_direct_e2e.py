@@ -7,7 +7,9 @@ get_me() to verify the full data path works.  Tests both obfuscated2
 
 Also downloads pre-saved test files through the proxy to verify sustained
 data transfer works correctly — catches DRS delay regressions that throttle
-large downloads.
+large downloads.  Small files (~50-100 KB) are downloaded in rapid succession
+to catch sticker/icon loading regressions where DRS delays re-apply between
+quick sequential requests.
 
 Uses ONE client per transport mode to avoid AuthKeyDuplicatedError from
 Telegram seeing multiple connections with the same auth key.
@@ -41,6 +43,7 @@ import io
 import os
 import sys
 import time
+import urllib.request
 
 # Custom API credentials avoid anti-abuse when user sessions are used from
 # datacenter IPs.  Falls back to public macOS client ID for bot token auth.
@@ -58,14 +61,27 @@ PROD_TEST_FILES = {
 
 # Test DC (user session) — seeded separately, test DC data may be wiped.
 # Re-seed with: .venv/bin/python tests/seed_test_media.py --test-dc
+#
+# Small files (50kb, 100kb) exercise the DRS slow-start phase where
+# inter-record delays are applied.  If the 30s delay reset is broken,
+# rapid sequential small downloads will fail or be very slow.
 TEST_DC_CHANNEL_ID = int(os.environ.get("TEST_DC_CHANNEL_ID", "-1008001150052"))
 TEST_DC_FILES = {
+    # Small files — need seeding: .venv/bin/python tests/seed_test_media.py --test-dc
+    # Update msg_id and sha256 from seed output.
+    "50kb": {"msg_id": 0, "size": 51200, "sha256": ""},
+    "100kb": {"msg_id": 0, "size": 102400, "sha256": ""},
     "1mb": {"msg_id": 2, "size": 1048576, "sha256": "6a9cdbe994d65001eda3140c7c8b887e468297edce888d7d00f8cbea89d38037"},
     "20mb": {"msg_id": 3, "size": 20971520, "sha256": "effe8801748924d8ea366a99c2fab681dacd804a363497b2ba335c40ec1047bf"},
 }
 
 # Per-file download timeouts (seconds).
-DOWNLOAD_TIMEOUTS = {"1mb": 60, "20mb": 300, "100mb": 900}
+DOWNLOAD_TIMEOUTS = {"50kb": 30, "100kb": 30, "1mb": 60, "20mb": 300, "100mb": 900}
+
+# Small files for rapid sequential download test (sticker/icon scenario).
+# The DRS 30s delay reset bug (upstream v3.5.3) caused delays to re-apply
+# between quick sequential small downloads, breaking sticker/icon loading.
+SMALL_FILE_LABELS = ("50kb", "100kb")
 
 # Minimum acceptable throughput (MB/s) for files >= 20 MB.
 # The DRS delay bug (v3.5.0) throttled downloads to ~2 MB/s.
@@ -142,6 +158,10 @@ async def _download_test_files(client, transport_label):
     """
     throughputs = {}
     for label, info in TEST_FILES.items():
+        if not info["sha256"]:
+            continue  # Not yet seeded
+        if label in SMALL_FILE_LABELS:
+            continue  # Tested separately in _download_small_files
         timeout = DOWNLOAD_TIMEOUTS[label]
         print(f"  [{transport_label}] downloading {label} "
               f"(msg_id={info['msg_id']}, timeout={timeout}s)...",
@@ -216,6 +236,132 @@ async def _download_test_files(client, transport_label):
               f"{elapsed:.1f}s, {throughput_mb:.2f} MB/s")
 
     return throughputs
+
+
+async def _download_small_files(client, transport_label):
+    """Download small files in rapid succession and verify integrity.
+
+    Exercises the DRS slow-start phase where inter-record delays are applied.
+    If the 30s delay reset incorrectly re-applies delays between quick
+    downloads, these small files will fail or be very slow.
+
+    Returns True if all small files pass, False if any fail.
+    """
+    small_files = {k: v for k, v in TEST_FILES.items()
+                   if k in SMALL_FILE_LABELS and v["sha256"]}
+    if not small_files:
+        print(f"  [{transport_label}] small files: SKIP — not seeded")
+        return True
+
+    print(f"  [{transport_label}] downloading {len(small_files)} small files "
+          f"in rapid succession...", flush=True)
+
+    all_ok = True
+    for label, info in small_files.items():
+        try:
+            msg = await asyncio.wait_for(
+                client.get_messages(TEST_CHANNEL_ID, ids=info["msg_id"]),
+                timeout=15,
+            )
+        except Exception as e:
+            print(f"  [{transport_label}] {label}: SKIP — "
+                  f"could not fetch message: {type(e).__name__}: {e}")
+            continue
+
+        if msg is None or msg.media is None:
+            print(f"  [{transport_label}] {label}: SKIP — "
+                  f"message {info['msg_id']} not found (not seeded)")
+            continue
+
+        buf = io.BytesIO()
+        start = time.monotonic()
+        try:
+            await asyncio.wait_for(
+                client.download_media(msg, file=buf),
+                timeout=DOWNLOAD_TIMEOUTS.get(label, 30),
+            )
+        except Exception as e:
+            print(f"  [{transport_label}] {label}: FAIL — "
+                  f"{type(e).__name__}: {e}")
+            all_ok = False
+            continue
+
+        elapsed = time.monotonic() - start
+        data = buf.getvalue()
+        actual_hash = hashlib.sha256(data).hexdigest()
+
+        if len(data) != info["size"]:
+            print(f"  [{transport_label}] {label}: FAIL — "
+                  f"size mismatch: got {len(data)}, expected {info['size']}")
+            all_ok = False
+            continue
+
+        if actual_hash != info["sha256"]:
+            print(f"  [{transport_label}] {label}: FAIL — "
+                  f"SHA256 mismatch: got {actual_hash[:16]}..., "
+                  f"expected {info['sha256'][:16]}...")
+            all_ok = False
+            continue
+
+        print(f"  [{transport_label}] {label}: OK — "
+              f"{len(data)} bytes, {elapsed:.2f}s, SHA256 verified")
+
+    return all_ok
+
+
+def _check_proxy_stats(stats_port):
+    """Query proxy stats endpoint and verify direct mode health.
+
+    Returns (ok, details_dict).
+    """
+    host = os.environ.get("DIRECT_HOST", "localhost")
+    url = f"http://{host}:{stats_port}/stats"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            text = resp.read().decode()
+    except Exception as e:
+        print(f"  stats: SKIP — could not reach {url}: {e}")
+        return True, {}
+
+    stats = {}
+    for line in text.splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) == 2:
+            try:
+                stats[parts[0]] = int(parts[1])
+            except ValueError:
+                try:
+                    stats[parts[0]] = float(parts[1])
+                except ValueError:
+                    stats[parts[0]] = parts[1]
+
+    details = {}
+    ok = True
+
+    # direct_dc_connections_failed must be 0
+    failed = stats.get("direct_dc_connections_failed", 0)
+    details["dc_connect_failures"] = failed
+    if failed > 0:
+        print(f"  stats: FAIL — direct_dc_connections_failed={failed}")
+        ok = False
+
+    # Connection counters must be consistent
+    created = stats.get("direct_dc_connections_created", 0)
+    active = stats.get("direct_dc_connections_active", 0)
+    details["dc_connections_created"] = created
+    details["dc_connections_active"] = active
+    if active > created:
+        print(f"  stats: FAIL — active ({active}) > created ({created})")
+        ok = False
+
+    dc_closed = stats.get("direct_dc_connections_dc_closed", 0)
+    details["dc_connections_dc_closed"] = dc_closed
+
+    if ok:
+        print(f"  stats: OK — created={created}, active={active}, "
+              f"failed={failed}, dc_closed={dc_closed}")
+
+    return ok, details
 
 
 async def _connect_and_auth(client, label, bot_token=None):
@@ -296,10 +442,12 @@ async def test_obfs2_all(host, port, secret, bot_token="", session_str="",
 
         if test_files:
             throughputs = await _download_test_files(client, "obfs2")
+            small_ok = await _download_small_files(client, "obfs2")
         else:
             throughputs = {}
+            small_ok = True
         has_failure = any(v is None for v in throughputs.values())
-        return not has_failure, throughputs
+        return not has_failure and small_ok, throughputs
     except Exception as e:
         print(f"[obfs2] FAIL: {type(e).__name__}: {e}")
         return False, {}
@@ -347,10 +495,12 @@ async def test_faketls_all(host, port, secret, domain,
 
         if test_files:
             throughputs = await _download_test_files(client, "fake-tls")
+            small_ok = await _download_small_files(client, "fake-tls")
         else:
             throughputs = {}
+            small_ok = True
         has_failure = any(v is None for v in throughputs.values())
-        return not has_failure, throughputs
+        return not has_failure and small_ok, throughputs
     except Exception as e:
         print(f"[fake-tls] FAIL: {type(e).__name__}: {e}")
         return False, {}
@@ -440,10 +590,22 @@ def main():
         print(f"  {label}: obfs2={o:.2f} MB/s, fake-tls={t:.2f} MB/s, "
               f"ratio={ratio:.0%} {status}")
 
+    # Stats-based health verification on both proxy instances.
+    obfs2_stats_port = os.environ.get("DIRECT_OBFS2_STATS_PORT", "8888")
+    tls_stats_port = os.environ.get("DIRECT_TLS_STATS_PORT", "9888")
+
+    print("\n=== Proxy Health (stats) ===")
+    print("  obfs2 proxy:")
+    obfs2_stats_ok, _ = _check_proxy_stats(obfs2_stats_port)
+    print("  fake-tls proxy:")
+    tls_stats_ok, _ = _check_proxy_stats(tls_stats_port)
+
     print("\n=== Results ===")
     all_ok = True
     for name, ok in [("obfs2", obfs2_ok), ("fake-tls", tls_ok),
-                      ("tls-vs-obfs2-ratio", comparison_ok)]:
+                      ("tls-vs-obfs2-ratio", comparison_ok),
+                      ("obfs2-stats", obfs2_stats_ok),
+                      ("tls-stats", tls_stats_ok)]:
         status = "PASS" if ok else "FAIL"
         print(f"  {name}: {status}")
         if not ok:
