@@ -65,14 +65,12 @@ PROD_TEST_FILES = {
 # Small files (50kb, 100kb) exercise the DRS slow-start phase where
 # inter-record delays are applied.  If the 30s delay reset is broken,
 # rapid sequential small downloads will fail or be very slow.
-TEST_DC_CHANNEL_ID = int(os.environ.get("TEST_DC_CHANNEL_ID", "-1008001150052"))
+TEST_DC_CHANNEL_ID = int(os.environ.get("TEST_DC_CHANNEL_ID", "-1008005586427"))
 TEST_DC_FILES = {
-    # Small files — need seeding: .venv/bin/python tests/seed_test_media.py --test-dc
-    # Update msg_id and sha256 from seed output.
-    "50kb": {"msg_id": 0, "size": 51200, "sha256": ""},
-    "100kb": {"msg_id": 0, "size": 102400, "sha256": ""},
-    "1mb": {"msg_id": 2, "size": 1048576, "sha256": "6a9cdbe994d65001eda3140c7c8b887e468297edce888d7d00f8cbea89d38037"},
-    "20mb": {"msg_id": 3, "size": 20971520, "sha256": "effe8801748924d8ea366a99c2fab681dacd804a363497b2ba335c40ec1047bf"},
+    "50kb": {"msg_id": 2, "size": 51200, "sha256": "3d321cb085962e4e67f88ebcf8582213f8ab33f3d435078fd9916aa966091e42"},
+    "100kb": {"msg_id": 3, "size": 102400, "sha256": "4d128dd82d4611d79c11e66db430cb7c8a2cec8e03f2c8c9dbd85782ad90ce00"},
+    "1mb": {"msg_id": 4, "size": 1048576, "sha256": "397f45f514848283f5efc1c3c173e06cbc42bd7a391a295c31f17e7ed69e8f8d"},
+    "20mb": {"msg_id": 5, "size": 20971520, "sha256": "4a378f3b944021f30ad3c038e979b0a6af014663195c1f318838a70c356a6804"},
 }
 
 # Per-file download timeouts (seconds).
