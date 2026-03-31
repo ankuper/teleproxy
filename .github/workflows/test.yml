@@ -26,6 +26,19 @@ jobs:
     - name: Build with -Werror
       run: make clean && make -j$(nproc) EXTRA_CFLAGS="-Werror"
 
+  # Native ARM64 build: catches platform-specific issues (e.g., x86-only
+  # headers) that pass on x86 and Alpine/musl but fail on glibc aarch64.
+  build-werror-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libssl-dev zlib1g-dev
+    - name: Build with -Werror (ARM64 native)
+      run: make clean && make -j$(nproc) EXTRA_CFLAGS="-Werror"
+
   test:
     runs-on: ubuntu-latest
     steps:
