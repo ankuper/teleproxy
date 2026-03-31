@@ -9,9 +9,7 @@ theme:
   custom_dir: docs/overrides
   logo: assets/logo.svg
   favicon: assets/favicon.png
-  font:
-    text: Inter
-    code: JetBrains Mono
+  font: false
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -55,12 +53,69 @@ plugins:
         - locale: ru
           name: Русский
           build: true
+          nav_translations:
+            Home: Главная
+            Comparison: Сравнение
+            Getting Started: Начало работы
+            Installation: Установка
+            Quick Start: Быстрый старт
+            Docker: Docker
+            Configuration: Конфигурация
+            Monitoring: Мониторинг
+            Features: Возможности
+            "Fake-TLS (EE Mode)": "Fake-TLS (режим EE)"
+            Direct-to-DC Mode: Прямое подключение к DC
+            IP Access Control: Контроль доступа по IP
+            "Secrets & Limits": "Секреты и лимиты"
+            Deployment: Развёртывание
+            Systemd: Systemd
+            IPv6: IPv6
+            Testing: Тестирование
+            Changelog: Журнал изменений
         - locale: fa
           name: فارسی
           build: true
+          nav_translations:
+            Home: خانه
+            Comparison: مقایسه
+            Getting Started: شروع کار
+            Installation: نصب
+            Quick Start: شروع سریع
+            Docker: Docker
+            Configuration: پیکربندی
+            Monitoring: مانیتورینگ
+            Features: ویژگی‌ها
+            "Fake-TLS (EE Mode)": "Fake-TLS (حالت EE)"
+            Direct-to-DC Mode: اتصال مستقیم به DC
+            IP Access Control: کنترل دسترسی IP
+            "Secrets & Limits": "رمزها و محدودیت‌ها"
+            Deployment: استقرار
+            Systemd: Systemd
+            IPv6: IPv6
+            Testing: تست
+            Changelog: تاریخچه تغییرات
         - locale: vi
           name: Tiếng Việt
           build: true
+          nav_translations:
+            Home: Trang chủ
+            Comparison: So sánh
+            Getting Started: Bắt đầu
+            Installation: Cài đặt
+            Quick Start: Khởi động nhanh
+            Docker: Docker
+            Configuration: Cấu hình
+            Monitoring: Giám sát
+            Features: Tính năng
+            "Fake-TLS (EE Mode)": "Fake-TLS (Chế độ EE)"
+            Direct-to-DC Mode: Kết nối trực tiếp đến DC
+            IP Access Control: Kiểm soát truy cập IP
+            "Secrets & Limits": "Bí mật & Giới hạn"
+            Deployment: Triển khai
+            Systemd: Systemd
+            IPv6: IPv6
+            Testing: Kiểm thử
+            Changelog: Nhật ký thay đổi
 
 markdown_extensions:
   - admonition

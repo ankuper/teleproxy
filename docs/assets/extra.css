@@ -1,97 +1,239 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Base variables ────────────────────────────────────────────────── */
+
 :root {
-  --md-primary-fg-color: #5D9FD5;
+  --md-text-font: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --md-code-font: "JetBrains Mono", SFMono-Regular, monospace;
+  --md-primary-fg-color: #3d7ea6;
   --md-primary-bg-color: #fff;
-  --md-accent-fg-color: #7EDCF9;
+  --md-accent-fg-color: #5a9ec2;
 }
 
 [data-md-color-scheme="slate"] {
-  --md-primary-fg-color: #7EDCF9;
-  --md-primary-bg-color: #1e1e2e;
-  --md-accent-fg-color: #6A8BFF;
+  --md-primary-fg-color: #6cb4d9;
+  --md-primary-bg-color: #1a1a2e;
+  --md-accent-fg-color: #5a8abf;
 }
 
-/* Hero section on landing page */
+/* ── Global typography ─────────────────────────────────────────────── */
+
+.md-typeset {
+  font-size: 0.82rem;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4 {
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+.md-typeset h1 {
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+/* ── Homepage: full-width layout (no overflow hacks) ───────────────── */
+
+.md-main .md-main__inner:has(.tx-hero) {
+  margin: 0;
+  max-width: none;
+  padding: 0;
+}
+
+article.md-content__inner:has(> .tx-hero:first-child) {
+  padding: 0;
+  margin: 0;
+}
+
+article.md-content__inner:has(> .tx-hero:first-child)::before {
+  display: none;
+}
+
+/* Constrain non-hero, non-grid content to readable width */
+article.md-content__inner:has(> .tx-hero:first-child) > *:not(.tx-hero):not(.feature-grid) {
+  max-width: 61rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  box-sizing: border-box;
+}
+
+/* ── Hero section ──────────────────────────────────────────────────── */
+
 .tx-hero {
-  margin: 0 -0.8rem;
-  padding: 4rem 0.8rem 2rem;
+  box-sizing: border-box;
+  padding: 2.5rem max(2rem, calc(50% - 22rem)) 1.5rem;
   color: var(--md-primary-bg-color);
-  background: linear-gradient(135deg, #2B7A78 0%, #5D9FD5 50%, #6A8BFF 100%);
+  background: linear-gradient(135deg, #1a3a4a 0%, #2a6585 40%, #3d5a8a 100%);
 }
 
 [data-md-color-scheme="slate"] .tx-hero {
-  background: linear-gradient(135deg, #1a4a49 0%, #2d5f7a 50%, #3a4d8a 100%);
+  background: linear-gradient(135deg, #0f2530 0%, #1a3f55 40%, #2a3860 100%);
 }
 
 .tx-hero h1 {
-  margin-bottom: 0.5rem;
-  font-size: 2.4rem;
-  font-weight: 700;
+  margin-top: 0;
+  margin-bottom: 0.6rem;
+  font-size: 2.2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
   color: #fff;
 }
 
 .tx-hero p {
-  font-size: 1.2rem;
-  opacity: 0.9;
-  color: #e0f0ff;
+  font-size: 1rem;
+  line-height: 1.7;
+  max-width: 36rem;
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .tx-hero .md-button {
   margin-top: 1rem;
   margin-right: 0.5rem;
+  padding: 0.5rem 1.4rem;
   color: #fff;
-  border-color: #fff;
+  border-color: rgba(255, 255, 255, 0.45);
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.82rem;
+  letter-spacing: 0;
+  transition: all 0.2s ease;
 }
 
 .tx-hero .md-button--primary {
-  background-color: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.5);
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.35);
 }
 
 .tx-hero .md-button--primary:hover {
-  background-color: rgba(255, 255, 255, 0.25);
+  background-color: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.55);
 }
 
-/* Feature grid */
+.tx-hero .md-button:hover {
+  border-color: rgba(255, 255, 255, 0.7);
+  transform: translateY(-1px);
+}
+
+/* ── Feature grid ──────────────────────────────────────────────────── */
+
 .feature-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 1.2rem;
-  margin: 2rem 0;
+  max-width: 61rem;
+  margin: 1.2rem auto 2rem;
+  padding: 0 1rem;
+  box-sizing: border-box;
 }
 
 .feature-grid .feature {
-  padding: 1.2rem;
-  border-radius: 8px;
-  border: 1px solid var(--md-default-fg-color--lightest);
-  transition: box-shadow 0.2s;
+  padding: 1.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.015);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+[data-md-color-scheme="slate"] .feature-grid .feature {
+  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .feature-grid .feature:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+[data-md-color-scheme="slate"] .feature-grid .feature:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
 }
 
 .feature-grid .feature h3 {
   margin-top: 0;
   font-size: 1rem;
+  font-weight: 600;
 }
 
 .feature-grid .feature p {
   margin-bottom: 0;
   font-size: 0.85rem;
-  opacity: 0.8;
+  opacity: 0.75;
+  line-height: 1.6;
 }
 
-/* Callout box */
+/* ── Callout box ───────────────────────────────────────────────────── */
+
 .callout {
-  margin: 2rem 0;
-  padding: 1.5rem;
-  border-left: 4px solid var(--md-accent-fg-color);
+  margin: 2.5rem 0;
+  padding: 1.5rem 1.8rem;
+  border-left: 3px solid var(--md-accent-fg-color);
   background: var(--md-code-bg-color);
-  border-radius: 0 8px 8px 0;
-  font-size: 1.05rem;
+  border-radius: 0 10px 10px 0;
+  font-size: 0.95rem;
+  line-height: 1.7;
 }
 
-/* RTL support for Farsi */
+/* ── Homepage bottom spacing ───────────────────────────────────────── */
+
+article.md-content__inner:has(> .tx-hero:first-child) {
+  padding-bottom: 3rem;
+}
+
+/* ── Responsive: tablet ────────────────────────────────────────────── */
+
+@media screen and (max-width: 76.25em) {
+  .feature-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .tx-hero {
+    padding: 2rem max(1.5rem, calc(50% - 18rem)) 1.2rem;
+  }
+  .tx-hero h1 {
+    font-size: 1.9rem;
+  }
+}
+
+/* ── Responsive: phone ─────────────────────────────────────────────── */
+
+@media screen and (max-width: 44.99em) {
+  .tx-hero {
+    padding: 1.5rem 1.2rem 1rem;
+  }
+  .tx-hero h1 {
+    font-size: 1.5rem;
+    line-height: 1.2;
+  }
+  .tx-hero p {
+    font-size: 0.9rem;
+  }
+  .tx-hero .md-button {
+    display: block;
+    margin-right: 0;
+    margin-bottom: 0.5rem;
+    text-align: center;
+  }
+  .feature-grid {
+    grid-template-columns: 1fr;
+    gap: 0.8rem;
+  }
+}
+
+/* ── RTL support (Farsi) ───────────────────────────────────────────── */
+
 [dir="rtl"] .feature-grid {
   direction: rtl;
+}
+
+[dir="rtl"] .tx-hero .md-button {
+  margin-right: 0;
+  margin-left: 0.6rem;
 }
