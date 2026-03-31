@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.3.0
+
+Direct mode connection resilience.
+
+- IPv6 auto-detection: probe at startup, enable without `-6` if reachable
+- Multiple addresses per DC with synchronous failover on connect failure
+- Connection retry with exponential backoff (200ms–800ms, 3 attempts)
+- `--dc-override dc_id:host:port` to add or replace DC addresses (repeatable). Docker: `DC_OVERRIDE=2:1.2.3.4:443,2:5.6.7.8:443`
+- New stat: `direct_dc_retries` / `teleproxy_direct_dc_retries_total`
+
 ## 4.2.1
 
 - Fix aarch64 build: remove unused x86-only `sys/io.h` include
