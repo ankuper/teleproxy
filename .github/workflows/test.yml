@@ -81,6 +81,9 @@ jobs:
     - name: Run IPv6 Direct Mode Tests
       run: make test-ipv6-direct
 
+    - name: Run Bind Address Tests
+      run: make test-bind-address
+
   test-dc-lookup:
     runs-on: ubuntu-latest
     steps:

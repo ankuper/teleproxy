@@ -257,6 +257,15 @@ test-ipv6-direct:
 		docker compose -f tests/docker-compose.ipv6-direct-test.yml down; exit 1)
 	docker compose -f tests/docker-compose.ipv6-direct-test.yml down
 
+test-bind-address:
+	@export TELEPROXY_SECRET=$$(head -c 16 /dev/urandom | xxd -ps) && \
+	echo "Using secret: $$TELEPROXY_SECRET" && \
+	timeout 300s docker compose -f tests/docker-compose.bind-address-test.yml up --build --exit-code-from tester || \
+		(echo "Bind address test timed out or failed"; \
+		docker compose -f tests/docker-compose.bind-address-test.yml logs teleproxy; \
+		docker compose -f tests/docker-compose.bind-address-test.yml down; exit 1)
+	docker compose -f tests/docker-compose.bind-address-test.yml down
+
 test-dc-lookup:
 	$(MAKE) -C fuzz test
 

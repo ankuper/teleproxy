@@ -2430,7 +2430,7 @@ static int secret_count;
 // int outbound_connections_per_second = DEFAULT_OUTBOUND_CONNECTION_CREATION_RATE;
 
 void mtfront_pre_loop (void) {
-  int i, enable_ipv6 = ipv6_enabled ? SM_IPV6 : 0;
+  int i, enable_ipv6 = (ipv6_enabled && !engine_state->settings_addr.s_addr) ? SM_IPV6 : 0;
   if (domain_count == 0) {
     tcp_maximize_buffers = 1;
     if (window_clamp == 0) {
@@ -2797,7 +2797,10 @@ void mtfront_pre_init (void) {
       ipv6_enabled = 1;
     }
   }
-  int i, enable_ipv6 = ipv6_enabled ? SM_IPV6 : 0;
+  int i, enable_ipv6 = (ipv6_enabled && !engine_state->settings_addr.s_addr) ? SM_IPV6 : 0;
+  if (ipv6_enabled && !enable_ipv6) {
+    vkprintf (0, "--address specifies an IPv4 bind address; keeping IPv4 listener (outbound IPv6 still active)\n");
+  }
 
   for (i = 0; i < http_ports_num; i++) {
     http_sfd[i] = server_socket (http_port[i], engine_state->settings_addr, engine_get_backlog (), enable_ipv6);

@@ -164,6 +164,10 @@ if [ -n "$EE_DOMAIN" ]; then
     CMD="$CMD -D $EE_DOMAIN"
 fi
 
+if [ -n "$BIND_ADDRESS" ]; then
+    CMD="$CMD --address $BIND_ADDRESS"
+fi
+
 if [ -n "$IP_BLOCKLIST" ]; then
     CMD="$CMD --ip-blocklist $IP_BLOCKLIST"
 fi
