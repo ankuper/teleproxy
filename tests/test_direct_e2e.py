@@ -240,21 +240,22 @@ async def _download_small_files(client, transport_label):
     """Download small files in rapid succession and verify integrity.
 
     Exercises the DRS slow-start phase where inter-record delays are applied.
-    If the 30s delay reset incorrectly re-applies delays between quick
-    downloads, these small files will fail or be very slow.
+    If delays fire on every record instead of once per burst, these small
+    files will be measurably slower on fake-TLS than on obfs2.
 
-    Returns True if all small files pass, False if any fail.
+    Returns (all_ok, total_elapsed_seconds).
     """
     small_files = {k: v for k, v in TEST_FILES.items()
                    if k in SMALL_FILE_LABELS and v["sha256"]}
     if not small_files:
         print(f"  [{transport_label}] small files: SKIP — not seeded")
-        return True
+        return True, 0.0
 
     print(f"  [{transport_label}] downloading {len(small_files)} small files "
           f"in rapid succession...", flush=True)
 
     all_ok = True
+    total_elapsed = 0.0
     for label, info in small_files.items():
         try:
             msg = await asyncio.wait_for(
@@ -285,6 +286,7 @@ async def _download_small_files(client, transport_label):
             continue
 
         elapsed = time.monotonic() - start
+        total_elapsed += elapsed
         data = buf.getvalue()
         actual_hash = hashlib.sha256(data).hexdigest()
 
@@ -304,7 +306,7 @@ async def _download_small_files(client, transport_label):
         print(f"  [{transport_label}] {label}: OK — "
               f"{len(data)} bytes, {elapsed:.2f}s, SHA256 verified")
 
-    return all_ok
+    return all_ok, total_elapsed
 
 
 def _check_proxy_stats(stats_port):
@@ -363,6 +365,55 @@ def _check_proxy_stats(stats_port):
               f"failed={failed}, dc_closed={dc_closed}, retries={retries}")
 
     return ok, details
+
+
+def _check_drs_delay_stats(stats_port):
+    """Verify DRS delays are bounded after real file downloads.
+
+    With per-burst delays (DRS_DELAY_RECORDS), the vast majority of records
+    should skip the delay.  If delays_applied is a large fraction of total
+    records, the per-record delay bug has regressed.
+
+    Returns True if the ratio is healthy or if no data was transferred.
+    """
+    host = os.environ.get("DIRECT_HOST", "localhost")
+    url = f"http://{host}:{stats_port}/stats"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            text = resp.read().decode()
+    except Exception as e:
+        print(f"  SKIP — could not reach {url}: {e}")
+        return True
+
+    applied = skipped = 0
+    for line in text.splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) != 2:
+            continue
+        if parts[0] == "drs_delays_applied":
+            applied = int(parts[1])
+        elif parts[0] == "drs_delays_skipped":
+            skipped = int(parts[1])
+
+    total = applied + skipped
+    if total == 0:
+        print("  SKIP — no DRS delay decisions recorded")
+        return True
+
+    skip_pct = skipped * 100 // total
+    print(f"  applied={applied}, skipped={skipped}, "
+          f"total={total}, skip_rate={skip_pct}%")
+
+    # With per-burst delays, skip rate should be very high (>80%).
+    # The old per-record delay code would show skip rates of ~30-50%
+    # because delays fired on every record during slow-start tail.
+    if skip_pct < 80:
+        print(f"  FAIL — skip rate {skip_pct}% < 80% "
+              f"(DRS delays firing too often)")
+        return False
+
+    print(f"  OK — {skip_pct}% of delay decisions skipped")
+    return True
 
 
 async def _connect_and_auth(client, label, bot_token=None):
@@ -443,15 +494,15 @@ async def test_obfs2_all(host, port, secret, bot_token="", session_str="",
 
         if test_files:
             throughputs = await _download_test_files(client, "obfs2")
-            small_ok = await _download_small_files(client, "obfs2")
+            small_ok, small_time = await _download_small_files(client, "obfs2")
         else:
             throughputs = {}
-            small_ok = True
+            small_ok, small_time = True, 0.0
         has_failure = any(v is None for v in throughputs.values())
-        return not has_failure and small_ok, throughputs
+        return not has_failure and small_ok, throughputs, small_time
     except Exception as e:
         print(f"[obfs2] FAIL: {type(e).__name__}: {e}")
-        return False, {}
+        return False, {}, 0.0
     finally:
         try:
             await client.disconnect()
@@ -466,7 +517,7 @@ async def test_faketls_all(host, port, secret, domain,
         from TelethonFakeTLS import ConnectionTcpMTProxyFakeTLS
     except ImportError:
         print("[fake-tls] SKIP: TelethonFakeTLS not installed")
-        return True, {}
+        return True, {}, 0.0
 
     from telethon import TelegramClient
     from telethon.sessions import StringSession
@@ -490,21 +541,21 @@ async def test_faketls_all(host, port, secret, domain,
                                      bot_token=bot_token or None)
         if me is None:
             print("[fake-tls] FAIL: get_me() returned None")
-            return False, {}
+            return False, {}, 0.0
 
         print(f"[fake-tls] get_me OK: id={me.id}")
 
         if test_files:
             throughputs = await _download_test_files(client, "fake-tls")
-            small_ok = await _download_small_files(client, "fake-tls")
+            small_ok, small_time = await _download_small_files(client, "fake-tls")
         else:
             throughputs = {}
-            small_ok = True
+            small_ok, small_time = True, 0.0
         has_failure = any(v is None for v in throughputs.values())
-        return not has_failure and small_ok, throughputs
+        return not has_failure and small_ok, throughputs, small_time
     except Exception as e:
         print(f"[fake-tls] FAIL: {type(e).__name__}: {e}")
-        return False, {}
+        return False, {}, 0.0
     finally:
         try:
             await client.disconnect()
@@ -561,7 +612,7 @@ def main():
     print(f"=== Direct Mode E2E Tests ({mode}) ===\n")
 
     # Test 1: obfuscated2 (control — no DRS delays)
-    obfs2_ok, obfs2_tp = asyncio.run(
+    obfs2_ok, obfs2_tp, obfs2_small_time = asyncio.run(
         test_obfs2_all(host, obfs2_port, secret,
                        bot_token=bot_token, session_str=session_str,
                        test_files=test_files)
@@ -569,7 +620,7 @@ def main():
     print()
 
     # Test 2: fake-TLS (exercises DRS delays)
-    tls_ok, tls_tp = asyncio.run(
+    tls_ok, tls_tp, tls_small_time = asyncio.run(
         test_faketls_all(host, tls_port, secret, domain,
                          bot_token=bot_token, session_str=session_str,
                          test_files=test_files)
@@ -591,9 +642,33 @@ def main():
         print(f"  {label}: obfs2={o:.2f} MB/s, fake-tls={t:.2f} MB/s, "
               f"ratio={ratio:.0%} {status}")
 
+    # Small file timing comparison: fake-TLS should not be dramatically slower
+    # than obfs2 for small files.  The DRS delay bug (v3.5.0) caused fake-TLS
+    # to add hundreds of ms of artificial delays when loading small assets
+    # like avatars and thumbnails.  With per-burst delays, the overhead is
+    # negligible.
+    print("\n=== Small File Timing ===")
+    small_timing_ok = True
+    if obfs2_small_time > 0 and tls_small_time > 0:
+        ratio = tls_small_time / obfs2_small_time
+        status = "OK" if ratio < 3.0 else "FAIL"
+        if status == "FAIL":
+            small_timing_ok = False
+        print(f"  obfs2={obfs2_small_time:.2f}s, "
+              f"fake-tls={tls_small_time:.2f}s, "
+              f"ratio={ratio:.1f}x {status}")
+    else:
+        print("  SKIP — no small file timing data")
+
+    # DRS delay stats: after real file downloads, verify the proxy didn't
+    # apply excessive inter-record delays.  With per-burst delays, most
+    # records should skip the delay (drs_delays_skipped >> drs_delays_applied).
+    tls_stats_port = os.environ.get("DIRECT_TLS_STATS_PORT", "9888")
+    print("\n=== DRS Delay Stats ===")
+    drs_ok = _check_drs_delay_stats(tls_stats_port)
+
     # Stats-based health verification on both proxy instances.
     obfs2_stats_port = os.environ.get("DIRECT_OBFS2_STATS_PORT", "8888")
-    tls_stats_port = os.environ.get("DIRECT_TLS_STATS_PORT", "9888")
 
     print("\n=== Proxy Health (stats) ===")
     print("  obfs2 proxy:")
@@ -605,6 +680,8 @@ def main():
     all_ok = True
     for name, ok in [("obfs2", obfs2_ok), ("fake-tls", tls_ok),
                       ("tls-vs-obfs2-ratio", comparison_ok),
+                      ("small-file-timing", small_timing_ok),
+                      ("drs-delay-ratio", drs_ok),
                       ("obfs2-stats", obfs2_stats_ok),
                       ("tls-stats", tls_stats_ok)]:
         status = "PASS" if ok else "FAIL"
