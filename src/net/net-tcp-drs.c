@@ -55,6 +55,14 @@
    that burst content at TCP speed and vary timing only between responses. */
 #define DRS_BURST_THRESHOLD  DRS_SIZE_MAX
 
+/* Delays fire only for the first N records of each burst (after DRS
+   sizing reset).  Real HTTPS servers burst cached/buffered content at
+   wire speed — timing gaps appear only between responses, not between
+   records within a response.  Setting this to 1 means one delay per
+   burst, modelling the server-side processing pause before each new
+   response. */
+#define DRS_DELAY_RECORDS  1
+
 /* Default Weibull parameters (from mtg's ok.ru measurements) */
 #define DRS_DEFAULT_K      0.378
 #define DRS_DEFAULT_LAMBDA 1.732   /* milliseconds */
@@ -157,11 +165,13 @@ int cpu_tcp_aes_crypto_ctr128_encrypt_output_drs (connection_job_t C) /* {{{ */ 
 
     assert (rwm_encrypt_decrypt_to (&c->out, &c->out_p, len, T->write_aeskey, 1) == len);
 
-    /* Inter-record delay: skip during bulk transfers and sustained transfers
-       (phase 3 = max-size records = no real server adds delays here).
-       Delays only apply during slow-start phases 1+2 (~140KB, ~60 records). */
+    /* Inter-record delay: fires only for the first DRS_DELAY_RECORDS records
+       after a sizing reset.  Skipped during bulk transfers (buffer > burst
+       threshold), sustained transfers (total >= phase-2 end), and after
+       the initial burst records.  Models inter-response server processing
+       pause, not per-record latency. */
     if (drs_delays_enabled && (c->flags & C_IS_TLS) && c->out.total_bytes > 0) {
-      if (c->out.total_bytes > DRS_BURST_THRESHOLD || drs->total_records >= DRS_PHASE2_END) {
+      if (c->out.total_bytes > DRS_BURST_THRESHOLD || drs->total_records >= DRS_PHASE2_END || drs->record_index > DRS_DELAY_RECORDS) {
         drs_delays_skipped++;
         continue;
       }
