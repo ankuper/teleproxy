@@ -95,7 +95,11 @@ jobs:
             -e 's/\*\*\([^*]*\)\*\*/<b>\1<\/b>/g')
           TEXT=$(printf '🚀 <b>New Release: %s</b>\n\n%s\n\n<a href="https://github.com/%s/releases/tag/%s">Release notes</a> | <a href="https://github.com/%s">GitHub</a>' \
             "$TAG" "$BODY" "${{ github.repository }}" "$TAG" "${{ github.repository }}")
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H 'Content-Type: application/json' \
             -d "$(jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$TEXT" \
-              '{chat_id: $chat_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}')"
+              '{chat_id: $chat_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}')")
+          if ! echo "$RESPONSE" | jq -e '.ok' > /dev/null 2>&1; then
+            echo "::error::Telegram notification failed: $RESPONSE"
+            exit 1
+          fi
