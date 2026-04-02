@@ -2889,7 +2889,46 @@ server_functions_t mtproto_front_functions = {
   //.http_functions = &http_methods_stats
 };
 
+static int cmd_generate_secret (int argc, char *argv[]) {
+  const char *domain = (argc > 0) ? argv[0] : NULL;
+
+  unsigned char key[16];
+  if (RAND_bytes (key, 16) != 1) {
+    fprintf (stderr, "RAND_bytes failed\n");
+    return 1;
+  }
+
+  char raw[33];
+  int i;
+  for (i = 0; i < 16; i++) {
+    snprintf (raw + i * 2, 3, "%02x", key[i]);
+  }
+  raw[32] = '\0';
+
+  if (domain) {
+    char hex[1024];
+    int pos = 0;
+    pos += snprintf (hex + pos, sizeof (hex) - pos, "ee%s", raw);
+    const unsigned char *d = (const unsigned char *)domain;
+    while (*d) {
+      pos += snprintf (hex + pos, sizeof (hex) - pos, "%02x", *d);
+      d++;
+    }
+    printf ("%s\n", hex);
+    fprintf (stderr, "Secret for -S:  %s\n", raw);
+    fprintf (stderr, "Domain:         %s\n", domain);
+  } else {
+    printf ("%s\n", raw);
+  }
+
+  return 0;
+}
+
 int main (int argc, char *argv[]) {
+  if (argc >= 2 && !strcmp (argv[1], "generate-secret")) {
+    return cmd_generate_secret (argc - 2, argv + 2);
+  }
+
   mtproto_front_functions.allowed_signals |= SIG2INT (SIGCHLD);
   mtproto_front_functions.signal_handlers[SIGCHLD] = on_child_termination;
   mtproto_front_functions.signal_handlers[SIGUSR1] = mtfront_sigusr1_handler;

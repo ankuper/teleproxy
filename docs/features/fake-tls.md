@@ -12,22 +12,16 @@ Server setup — add domain configuration (must support TLS 1.3):
 ./teleproxy -u nobody -p 8888 -H 443 -S <secret> -D www.google.com --http-stats --aes-pwd proxy-secret proxy-multi.conf -M 1
 ```
 
-Get the domain hex:
+Generate the full client secret in one step:
 
 ```bash
-echo -n www.google.com | xxd -plain
-# Output: 7777772e676f6f676c652e636f6d
+teleproxy generate-secret www.google.com
+# stdout:  eecafe...7777772e676f6f676c652e636f6d
+# stderr:  Secret for -S:  cafe...
+#          Domain:         www.google.com
 ```
 
-Client secret: `eecafe1234567890abcdef1234567890ab7777772e676f6f676c652e636f6d`
-
-Quick generation:
-
-```bash
-SECRET="cafe1234567890abcdef1234567890ab"
-DOMAIN="www.google.com"
-echo -n "ee${SECRET}" && echo -n $DOMAIN | xxd -plain
-```
+Use the stdout value in `tg://proxy` links and the `Secret for -S` value with the `-S` flag.
 
 ## Custom TLS Backend (TCP Splitting)
 

@@ -94,7 +94,7 @@ done
 
 if [ "$#" -eq 0 ]; then
     echo "No SECRET provided, generating one..."
-    _gen=$(openssl rand -hex 16)
+    _gen=$(./teleproxy generate-secret 2>/dev/null)
     set -- "$_gen"
     echo "Generated secret: $_gen"
 fi

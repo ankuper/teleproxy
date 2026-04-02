@@ -23,7 +23,7 @@ curl -fsSL https://core.telegram.org/getProxyConfig -o proxy-multi.conf
 Clients will use this secret to connect through your proxy:
 
 ```bash
-head -c 16 /dev/urandom | xxd -ps
+./teleproxy generate-secret
 ```
 
 Save the output — you'll need it for the next step and for the connection link.

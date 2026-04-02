@@ -266,6 +266,37 @@ test-bind-address:
 		docker compose -f tests/docker-compose.bind-address-test.yml down; exit 1)
 	docker compose -f tests/docker-compose.bind-address-test.yml down
 
+test-generate-secret: docker-image-amd64
+	@echo "Testing generate-secret subcommand..."
+	@$(DOCKER) run --rm --platform $(DOCKER_PLATFORM) --entrypoint /bin/sh $(DOCKER_TEST_IMAGE) -c ' \
+		BIN=/opt/teleproxy/teleproxy; \
+		echo "Test 1: no-domain → 32 hex chars"; \
+		out=$$($$BIN generate-secret 2>/dev/null); \
+		printf "%s" "$$out" | grep -qE "^[0-9a-f]{32}$$" || { echo "FAIL: $$out"; exit 1; }; \
+		echo "  PASS"; \
+		echo "Test 2: domain → ee + secret + domain hex"; \
+		out=$$($$BIN generate-secret example.com 2>/dev/null); \
+		printf "%s" "$$out" | grep -qE "^ee[0-9a-f]{32}6578616d706c652e636f6d$$" || { echo "FAIL: $$out"; exit 1; }; \
+		echo "  PASS"; \
+		echo "Test 3: randomness (two calls differ)"; \
+		s1=$$($$BIN generate-secret 2>/dev/null); \
+		s2=$$($$BIN generate-secret 2>/dev/null); \
+		[ "$$s1" != "$$s2" ] || { echo "FAIL: identical"; exit 1; }; \
+		echo "  PASS"; \
+		echo "Test 4: exit code 0"; \
+		$$BIN generate-secret >/dev/null 2>&1; \
+		[ $$? -eq 0 ] || { echo "FAIL: non-zero exit"; exit 1; }; \
+		echo "  PASS"; \
+		echo "Test 5: stderr context with domain"; \
+		$$BIN generate-secret example.com 2>&1 >/dev/null | grep -q "Secret for -S" || { echo "FAIL: missing stderr"; exit 1; }; \
+		echo "  PASS"; \
+		echo "Test 6: no stderr without domain"; \
+		err=$$($$BIN generate-secret 2>&1 >/dev/null); \
+		[ -z "$$err" ] || { echo "FAIL: unexpected stderr: $$err"; exit 1; }; \
+		echo "  PASS"; \
+		echo "All generate-secret tests passed!" \
+	'
+
 test-dc-lookup:
 	$(MAKE) -C fuzz test
 

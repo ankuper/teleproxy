@@ -1,5 +1,21 @@
 # Secrets & Limits
 
+## Generating Secrets
+
+Generate a random 16-byte secret:
+
+```bash
+teleproxy generate-secret
+```
+
+For fake-TLS mode, pass the domain to get the full `ee`-prefixed secret ready for client links:
+
+```bash
+teleproxy generate-secret www.google.com
+# stdout:  ee<secret><domain-hex>  (use in tg://proxy links)
+# stderr:  Secret for -S: <secret>  (use with -S flag)
+```
+
 ## Multiple Secrets
 
 Up to 16 secrets, each with an optional label:
