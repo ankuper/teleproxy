@@ -8,6 +8,12 @@ High-performance MTProto proxy for Telegram with DPI resistance, fake-TLS camouf
 
 **[Documentation](https://teleproxy.github.io)** | **[Docker Quick Start](https://teleproxy.github.io/docker/)** | **[Comparison](https://teleproxy.github.io/comparison/)** | **[Telegram](https://t.me/teleproxy_dev)**
 
+<details>
+<summary>🎵 Ghost Protocol — the unofficial anthem</summary>
+<br>
+<video src="https://github.com/user-attachments/assets/37919bc8-2bbb-4bea-8af6-2e15d3bc7c65" controls width="640"></video>
+</details>
+
 ## Highlights
 
 - **Fake-TLS camouflage** — traffic indistinguishable from normal HTTPS (TLS 1.3)
