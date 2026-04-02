@@ -67,6 +67,7 @@ static int read_whole_file (char *filename, void *output, int olen) {
   return n;
 }
 
+#ifdef __linux__
 static int parse_statm (const char *buf, long long *a, int m) {
   static long long page_size = -1;
   if (page_size < 0) {
@@ -90,6 +91,7 @@ static int parse_statm (const char *buf, long long *a, int m) {
   }
   return 0;
 }
+#endif
 
 int am_get_memory_usage (pid_t pid, long long *a, int m) {
 #ifndef __linux__

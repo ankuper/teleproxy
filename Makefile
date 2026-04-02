@@ -20,7 +20,7 @@ endif
 HOST_ARCH := $(shell uname -m)
 
 # Default CFLAGS and LDFLAGS
-COMMON_CFLAGS := -O3 -std=gnu11 -Wall -fno-strict-aliasing -fno-strict-overflow -fwrapv -DAES=1 -DCOMMIT=\"${COMMIT}\" -DVERSION=\"${VERSION}\" -D_FILE_OFFSET_BITS=64 -Wno-array-bounds -Wno-implicit-function-declaration
+COMMON_CFLAGS := -O3 -std=gnu11 -Wall -fno-strict-aliasing -fno-strict-overflow -fwrapv -fno-common -DAES=1 -DCOMMIT=\"${COMMIT}\" -DVERSION=\"${VERSION}\" -D_FILE_OFFSET_BITS=64 -Wno-array-bounds -Wno-implicit-function-declaration
 
 # Platform-specific flags
 UNAME_S := $(shell uname -s)
@@ -144,7 +144,7 @@ ${LIB_OBJS_NORMAL}: ${OBJ}/%.o: %.c | create_dirs_and_headers
 ${EXELIST}: ${LIBLIST}
 
 ${EXE}/teleproxy:	${OBJ}/src/mtproto/mtproto-proxy.o ${OBJ}/src/mtproto/mtproto-config.o ${OBJ}/src/mtproto/mtproto-dc-table.o ${OBJ}/src/net/net-tcp-rpc-ext-server.o
-	${CC} -o $@ $^ ${LIB}/libkdb.a ${LDFLAGS}
+	${CC} -o $@ $^ ${LDFLAGS}
 
 ${LIB}/libkdb.a: ${LIB_OBJS}
 	rm -f $@ && ar rcs $@ $^

@@ -137,6 +137,7 @@ void set_maxconn (int val) {
     val = MAX_CONNECTIONS;
   }
   engine_state->maxconn = val;
+  engine_state->maxconn_from_cli = 1;
   tcp_set_max_connections (val);
 }
 

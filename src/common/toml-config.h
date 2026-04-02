@@ -34,6 +34,9 @@ struct toml_config {
   int workers;             /* -M; -1 = not set */
   int max_connections;     /* -C; 0 = not set */
   char bind[64];           /* --address; empty = not set */
+  int ipv6;                /* -6; -1 = not set */
+  int maxconn;             /* -c (engine fd limit); 0 = not set */
+  char user[64];           /* -u; empty = not set */
 
   /* Mode (not reloadable) */
   int direct;              /* --direct; -1 = not set */

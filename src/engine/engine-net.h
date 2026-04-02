@@ -35,3 +35,4 @@ int get_port_mod (void);
 void engine_server_init (void);
 void engine_set_tcp_methods (struct tcp_rpc_server_functions *F);
 void engine_set_http_fallback (conn_type_t *http_type, struct http_server_functions *http_functions);
+void set_maxconn (int val);

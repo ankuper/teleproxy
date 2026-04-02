@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include "common/platform.h"
@@ -2519,10 +2520,15 @@ static void mtfront_sighup_handler (void) {
  */
 
 void usage (void) {
-  printf ("usage: %s [-v] [-6] [-p<port>] [-H<http-port>{,<http-port>}] [-M<workers>] [-u<username>] [-b<backlog>] [-c<max-conn>] [-l<log-name>] [-W<window-size>] [--direct] <config-file>\n", progname);
+  printf ("usage: %s [options] [relay-config]\n", progname);
+  printf ("       %s generate-secret [domain]\n", progname);
   printf ("%s\n", FullVersionStr);
-  printf ("\tSimple MT-Proto proxy\n");
-  printf ("\tIn --direct mode, <config-file> is not required.\n");
+  printf ("\tMTProto proxy for Telegram\n");
+  printf ("\n");
+  printf ("\tWith --config, all settings come from the TOML file.\n");
+  printf ("\tThe [relay-config] positional arg is only needed in non-direct relay mode\n");
+  printf ("\t(the binary config downloaded from Telegram, e.g. proxy-multi.conf).\n");
+  printf ("\n");
   parse_usage ();
   exit (2);
 }
@@ -2774,23 +2780,20 @@ void mtfront_prepare_parse_options (void) {
 }
 
 void mtfront_parse_extra_args (int argc, char *argv[]) /* {{{ */ {
-  if (direct_mode || toml_config_path) {
-    if (argc > 1) {
-      usage ();
-      exit (2);
-    }
-    if (argc == 1) {
-      config_filename = argv[0];
-      vkprintf (0, "config_filename = '%s'\n", config_filename);
-    }
-    return;
-  }
-  if (argc != 1) {
+  if (argc > 1) {
     usage ();
     exit (2);
   }
-  config_filename = argv[0];
-  vkprintf (0, "config_filename = '%s'\n", config_filename);
+  if (argc == 1) {
+    config_filename = argv[0];
+    vkprintf (0, "config_filename = '%s'\n", config_filename);
+  }
+  if (!config_filename && !direct_mode && !toml_config_path) {
+    kprintf ("error: relay mode requires a config file.\n"
+             "  Use --config for TOML configuration, or --direct for direct mode.\n"
+             "  Legacy: pass the binary relay config (proxy-multi.conf) as a positional argument.\n");
+    exit (2);
+  }
 }
 
 // executed BEFORE dropping privileges
@@ -2848,11 +2851,31 @@ void mtfront_pre_init (void) {
     if (toml_cfg.workers >= 0 && workers <= 0) {
       workers = toml_cfg.workers;
     }
-    /* max_connections maps to -C (per-worker client limit), not -c (engine total).
-       -c must be passed on CLI since it's handled by the engine. */
     if (toml_cfg.max_connections > 0 && max_special_connections == 0) {
       max_special_connections = toml_cfg.max_connections;
     }
+    if (toml_cfg.stats_port > 0 && engine_state->port <= 0) {
+      engine_state->port = toml_cfg.stats_port;
+    }
+    if (toml_cfg.bind[0] && !engine_state->settings_addr.s_addr) {
+      if (inet_pton (AF_INET, toml_cfg.bind, &engine_state->settings_addr) != 1) {
+        kprintf ("config error: invalid bind address '%s'\n", toml_cfg.bind);
+        exit (1);
+      }
+    }
+    if (toml_cfg.ipv6 == 1) {
+      engine_enable_ipv6 ();
+    }
+    if (toml_cfg.user[0] && !username) {
+      username = toml_cfg.user;
+    }
+    if (toml_cfg.maxconn > 0 && !engine_state->maxconn_from_cli) {
+      set_maxconn (toml_cfg.maxconn);
+    }
+  }
+
+  if (engine_state->port > 0 && engine_state->do_not_open_port) {
+    kprintf ("warning: stats_port is set but http_stats is not enabled — stats port will not open\n");
   }
 
   if (direct_mode && proxy_tag_set) {
@@ -3035,10 +3058,12 @@ static int cmd_generate_secret (int argc, char *argv[]) {
 }
 
 int main (int argc, char *argv[]) {
+  /* Subcommand dispatch — checked before engine init */
   if (argc >= 2 && !strcmp (argv[1], "generate-secret")) {
     return cmd_generate_secret (argc - 2, argv + 2);
   }
 
+  /* Default: start the proxy server */
   mtproto_front_functions.allowed_signals |= SIG2INT (SIGCHLD);
   mtproto_front_functions.signal_handlers[SIGCHLD] = on_child_termination;
   mtproto_front_functions.signal_handlers[SIGUSR1] = mtfront_sigusr1_handler;

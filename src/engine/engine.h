@@ -129,6 +129,7 @@ typedef struct {
 
   int backlog;
   int maxconn;
+  int maxconn_from_cli;
   int required_io_threads;
   int required_cpu_threads;
   int required_tcp_cpu_threads;

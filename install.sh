@@ -142,7 +142,9 @@ else
         echo "# Teleproxy configuration"
         echo "# Edit and run: systemctl reload teleproxy"
         echo "port = $PORT"
+        echo "stats_port = $STATS_PORT"
         echo "http_stats = true"
+        echo "user = \"$SERVICE_USER\""
         echo "direct = true"
         echo "workers = $WORKERS"
         if [ -n "$EE_DOMAIN" ]; then
@@ -170,7 +172,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=teleproxy
-ExecStart=/usr/local/bin/teleproxy --config /etc/teleproxy/config.toml -p 8888
+ExecStart=/usr/local/bin/teleproxy --config /etc/teleproxy/config.toml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5

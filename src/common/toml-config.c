@@ -231,6 +231,7 @@ int toml_config_load (const char *path, struct toml_config *cfg,
   cfg->direct = -1;
   cfg->http_stats = -1;
   cfg->random_padding_only = -1;
+  cfg->ipv6 = -1;
 
   toml_result_t res = toml_parse_file_ex (path);
   if (!res.ok) {
@@ -246,6 +247,9 @@ int toml_config_load (const char *path, struct toml_config *cfg,
   cfg->workers = get_optional_int (top, "workers", -1);
   cfg->max_connections = get_optional_int (top, "max_connections", 0);
   get_optional_string (top, "bind", cfg->bind, sizeof (cfg->bind));
+  cfg->ipv6 = get_optional_bool (top, "ipv6", -1);
+  cfg->maxconn = get_optional_int (top, "maxconn", 0);
+  get_optional_string (top, "user", cfg->user, sizeof (cfg->user));
 
   /* Mode */
   cfg->direct = get_optional_bool (top, "direct", -1);
@@ -335,6 +339,18 @@ int toml_config_reload (const char *path, struct toml_config *cfg) {
   }
   if (new_cfg.domain_count != cfg->domain_count) {
     kprintf ("config reload: 'domain' changed — restart required\n");
+  }
+  if (new_cfg.maxconn && cfg->maxconn && new_cfg.maxconn != cfg->maxconn) {
+    kprintf ("config reload: 'maxconn' changed — restart required\n");
+  }
+  if (new_cfg.bind[0] && cfg->bind[0] && strcmp (new_cfg.bind, cfg->bind) != 0) {
+    kprintf ("config reload: 'bind' changed — restart required\n");
+  }
+  if (new_cfg.ipv6 >= 0 && cfg->ipv6 >= 0 && new_cfg.ipv6 != cfg->ipv6) {
+    kprintf ("config reload: 'ipv6' changed — restart required\n");
+  }
+  if (new_cfg.user[0] && cfg->user[0] && strcmp (new_cfg.user, cfg->user) != 0) {
+    kprintf ("config reload: 'user' changed — restart required\n");
   }
 
   /* Apply reloadable fields */

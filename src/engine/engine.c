@@ -105,6 +105,7 @@ static void default_sigusr1 (void) {
 }
 
 
+#ifdef __linux__
 static void default_sigrtmax_9 (void) {
 }
 
@@ -119,6 +120,7 @@ static void default_sigrtmax_1 (void) {
 
 static void default_sigrtmax (void) {
 }
+#endif
 /* }}} */
 
 void set_signals_handlers (void) /* {{{ */ {
@@ -485,9 +487,8 @@ void default_engine_server_start (void) /* {{{ */ {
   job_t terminate_job = create_async_job (terminate_job_run, JSC_ALLOW (JC_ENGINE, JS_RUN) | JSC_ALLOW (JC_ENGINE, JS_FINISH), -1, 0, 0, JOB_REF_NULL);
   unlock_job (JOB_REF_CREATE_PASS (terminate_job));
 
-  int i;
   vkprintf (0, "main loop\n");
-  for (i = 0; ; i++) {
+  for (;;) {
     epoll_work (E->epoll_wait_timeout);
     if (interrupt_signal_raised ()) {
       if (F->on_waiting_exit) {
