@@ -16,8 +16,8 @@ ifeq ($(m), 64)
 BITNESS_FLAGS = -m64
 endif
 
-# Determine the host architecture using arch
-HOST_ARCH := $(shell arch)
+# Determine the host architecture
+HOST_ARCH := $(shell uname -m)
 
 # Default CFLAGS and LDFLAGS
 COMMON_CFLAGS := -O3 -std=gnu11 -Wall -fno-strict-aliasing -fno-strict-overflow -fwrapv -DAES=1 -DCOMMIT=\"${COMMIT}\" -DVERSION=\"${VERSION}\" -D_FILE_OFFSET_BITS=64 -Wno-array-bounds -Wno-implicit-function-declaration
