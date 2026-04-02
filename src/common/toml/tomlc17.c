@@ -61,6 +61,7 @@ static int SETERROR(ebuf_t ebuf, int lineno, const char *fmt, ...) {
     p += strlen(p);
   }
   vsnprintf(p, p < q ? q - p : 0, fmt, args);
+  va_end(args);
   return -1;
 }
 
@@ -126,7 +127,7 @@ struct keypart_t {
 };
 
 static int utf8_to_ucs(const char *s, int len, uint32_t *ret);
-static int ucs_to_utf8(uint32_t code, char buf[4]);
+static int ucs_to_utf8(uint32_t code, char buf[6]);
 
 // flags for toml_datum_t::flag.
 #define FLAG_INLINED 1
@@ -2805,7 +2806,7 @@ static int utf8_to_ucs(const char *orig, int len, uint32_t *ret) {
  * Return #bytes used in buf to encode the char, or
  * -1 on error.
  */
-static int ucs_to_utf8(uint32_t code, char buf[4]) {
+static int ucs_to_utf8(uint32_t code, char buf[6]) {
   /* http://stackoverflow.com/questions/6240055/manually-converting-unicode-codepoints-into-utf-8-and-utf-16
    */
   /* The UCS code values 0xd800–0xdfff (UTF-16 surrogates) as well
