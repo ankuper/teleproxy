@@ -239,6 +239,10 @@ if [ "$PREFER_IPV6" = "true" ]; then
     CMD="$CMD -6"
 fi
 
+if [ -n "$BIND_ADDRESS" ]; then
+    CMD="$CMD --address $BIND_ADDRESS"
+fi
+
 if [ "$DIRECT_MODE" != "true" ]; then
     CMD="$CMD --aes-pwd proxy-secret data/proxy-multi.conf"
 fi
