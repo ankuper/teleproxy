@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.4.0]
+
+TOML config file, SIGHUP secret reload, and one-liner installer.
+
+- `--config /path/to/config.toml` for all settings: secrets, mode, ports, ACLs, DC overrides
+- SIGHUP reloads secrets and IP ACLs from the config file without dropping connections
+- CLI flags (`-S`, `--direct`, `-H`, etc.) override config file values; `-S` secrets are pinned and survive reload
+- `install.sh` one-liner for bare-metal Linux: downloads binary, creates systemd service, generates config with secret, prints connection link
+- Docker `start.sh` now generates a TOML config internally, enabling `docker exec <ctr> kill -HUP 1` for secret rotation
+- Vendored tomlc17 TOML v1.1 parser (MIT, cktan/tomlc17)
+
 ## [4.3.0]
 
 Direct mode connection resilience.

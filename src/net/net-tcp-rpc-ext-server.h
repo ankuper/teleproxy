@@ -37,6 +37,11 @@ const char *tcp_rpcs_get_ext_secret_label(int index);
 int tcp_rpcs_get_ext_secret_limit(int index);
 int tcp_rpcs_get_ext_secret_count(void);
 
+void tcp_rpcs_pin_ext_secrets (void);
+int tcp_rpcs_reload_ext_secrets (const unsigned char secrets[][16],
+                                const char labels[][EXT_SECRET_LABEL_MAX + 1],
+                                const int *limits, int count);
+
 void tcp_rpc_add_proxy_domain (const char *domain);
 
 void tcp_rpc_init_proxy_domains();

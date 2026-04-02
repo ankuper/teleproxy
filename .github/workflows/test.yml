@@ -72,6 +72,9 @@ jobs:
     - name: Run Secret Limit Tests
       run: make test-secret-limit
 
+    - name: Run Config Reload Tests
+      run: make test-config-reload
+
     - name: Run DRS Delays Tests
       run: make test-drs-delays
 

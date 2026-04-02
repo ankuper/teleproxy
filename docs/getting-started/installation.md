@@ -1,5 +1,33 @@
 # Installation
 
+## One-Liner Install (Recommended)
+
+The install script downloads the binary, creates a systemd service, generates a secret, and prints the connection link:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/teleproxy/teleproxy/main/install.sh | sh
+```
+
+Customize with environment variables:
+
+```bash
+PORT=8443 EE_DOMAIN=www.google.com curl -sSL https://raw.githubusercontent.com/teleproxy/teleproxy/main/install.sh | sh
+```
+
+After installation, manage with:
+
+```bash
+systemctl status teleproxy       # check status
+systemctl reload teleproxy       # reload config after editing
+nano /etc/teleproxy/config.toml  # edit config (secrets, ports, etc.)
+```
+
+To uninstall:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/teleproxy/teleproxy/main/install.sh | sh -s -- --uninstall
+```
+
 ## Static Binary (Any Linux)
 
 Pre-built static binaries are published with every release — statically linked against musl libc, zero runtime dependencies. Download and run.

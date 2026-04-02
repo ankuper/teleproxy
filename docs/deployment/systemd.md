@@ -1,46 +1,76 @@
 # Systemd
 
+The recommended way to set up systemd is via the [install script](../getting-started/installation.md#one-liner-install-recommended), which creates the service, config file, and user automatically.
+
+The sections below are for manual setup or reference.
+
 ## Service File
 
 Create `/etc/systemd/system/teleproxy.service`:
 
 ```ini
 [Unit]
-Description=Teleproxy
-After=network.target
+Description=Teleproxy MTProto Proxy
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/teleproxy
-ExecStart=/opt/teleproxy/teleproxy -u nobody -p 8888 -H 443 -S <secret> --http-stats -P <proxy tag> --aes-pwd proxy-secret proxy-multi.conf -M 1
+User=teleproxy
+ExecStart=/usr/local/bin/teleproxy --config /etc/teleproxy/config.toml -p 8888
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/teleproxy
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+## Config File
+
+Create `/etc/teleproxy/config.toml`:
+
+```toml
+port = 443
+http_stats = true
+direct = true
+workers = 1
+
+[[secret]]
+key = "your-32-hex-digit-secret-here"
+label = "default"
+```
+
+Generate a secret with `teleproxy generate-secret`.
 
 ## Setup
 
 ```bash
 systemctl daemon-reload
-systemctl restart teleproxy.service
-systemctl status teleproxy.service
-systemctl enable teleproxy.service
+systemctl enable --now teleproxy
+systemctl status teleproxy
 ```
 
-## IPv6 Example
+## Reloading
+
+Edit the config file and reload without dropping connections:
+
+```bash
+systemctl reload teleproxy
+```
+
+This sends SIGHUP, which reloads secrets and IP ACLs from the config file.
+
+## Legacy (CLI-only)
+
+If not using a config file, pass flags directly:
 
 ```ini
-[Unit]
-Description=Teleproxy (IPv6)
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/teleproxy
-ExecStart=/opt/teleproxy/teleproxy -6 -u nobody -p 8888 -H 443 -S <secret> --http-stats -P <proxy tag> --aes-pwd proxy-secret proxy-multi.conf -M 1
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
+ExecStart=/usr/local/bin/teleproxy -S <secret> -H 443 -p 8888 --http-stats --direct
 ```

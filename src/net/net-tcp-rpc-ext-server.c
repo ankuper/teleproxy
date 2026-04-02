@@ -635,6 +635,7 @@ int tcp_rpcs_default_execute (connection_job_t c, int op, struct raw_message *ms
 
 static unsigned char ext_secret[16][16];
 static int ext_secret_cnt = 0;
+static int ext_secret_pinned = 0;  /* CLI -S secrets that survive SIGHUP reload */
 static int ext_rand_pad_only = 0;
 static char ext_secret_label[16][EXT_SECRET_LABEL_MAX + 1];
 static int ext_secret_limit[16];  /* 0 = unlimited */
@@ -680,6 +681,46 @@ static int secret_over_limit (int secret_id) {
 
 void tcp_rpcs_set_ext_rand_pad_only(int set) {
   ext_rand_pad_only = set;
+}
+
+void tcp_rpcs_pin_ext_secrets (void) {
+  ext_secret_pinned = ext_secret_cnt;
+}
+
+int tcp_rpcs_reload_ext_secrets (const unsigned char secrets[][16],
+                                const char labels[][EXT_SECRET_LABEL_MAX + 1],
+                                const int *limits, int count) {
+  int total = ext_secret_pinned + count;
+  if (total > 16) {
+    vkprintf (0, "secret reload: too many secrets (%d pinned + %d from config = %d, max 16)\n",
+              ext_secret_pinned, count, total);
+    return -1;
+  }
+
+  /* Write new config secrets after pinned ones */
+  for (int i = 0; i < count; i++) {
+    int idx = ext_secret_pinned + i;
+    memcpy (ext_secret[idx], secrets[i], 16);
+    if (labels[i][0]) {
+      snprintf (ext_secret_label[idx], sizeof (ext_secret_label[idx]), "%s", labels[i]);
+    } else {
+      snprintf (ext_secret_label[idx], sizeof (ext_secret_label[idx]), "secret_%d", idx);
+    }
+    ext_secret_limit[idx] = limits[i];
+  }
+
+  /* Write barrier before updating count */
+  __sync_synchronize ();
+  ext_secret_cnt = total;
+
+  /* Zero connection counters for reloaded slots */
+  for (int i = ext_secret_pinned; i < total; i++) {
+    per_secret_connections[i] = 0;
+  }
+
+  vkprintf (0, "secret reload: %d pinned + %d from config = %d total\n",
+            ext_secret_pinned, count, total);
+  return 0;
 }
 
 static int allow_only_tls;

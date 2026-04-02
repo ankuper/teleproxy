@@ -68,18 +68,18 @@ endif
 LDFLAGS := $(COMMON_LDFLAGS)
 
 LIB = ${OBJ}/lib
-CINCLUDE = -iquote src/common -iquote src -iquote .
+CINCLUDE = -iquote src/common -iquote src/common/toml -iquote src -iquote .
 
 LIBLIST = ${LIB}/libkdb.a
 
-PROJECTS = src/common src/jobs src/mtproto src/net src/crypto src/engine
+PROJECTS = src/common src/common/toml src/jobs src/mtproto src/net src/crypto src/engine
 
 OBJDIRS := ${OBJ} $(addprefix ${OBJ}/,${PROJECTS}) ${EXE} ${LIB}
 DEPDIRS := ${DEP} $(addprefix ${DEP}/,${PROJECTS})
 ALLDIRS := ${DEPDIRS} ${OBJDIRS}
 
 
-.PHONY:	all clean lint tests test test-tls test-multi-secret test-secret-limit test-ip-acl test-drs-delays test-cdn-dc test-ipv6-direct test-dc-lookup docker-image-amd64 docker-run-help-amd64 docker-image-arm64 docker-run-help-arm64 fuzz fuzz-run
+.PHONY:	all clean lint tests test test-tls test-multi-secret test-secret-limit test-ip-acl test-drs-delays test-cdn-dc test-ipv6-direct test-dc-lookup test-config-reload docker-image-amd64 docker-run-help-amd64 docker-image-arm64 docker-run-help-arm64 fuzz fuzz-run
 
 EXELIST	:= ${EXE}/teleproxy
 
@@ -116,6 +116,7 @@ LIB_OBJS_NORMAL := \
 	${OBJ}/src/common/kprintf.o \
 	${OBJ}/src/common/precise-time.o ${OBJ}/src/common/cpuid.o \
 	${OBJ}/src/common/server-functions.o ${OBJ}/src/common/crc32.o \
+	${OBJ}/src/common/toml/tomlc17.o ${OBJ}/src/common/toml-config.o \
 
 LIB_OBJS := ${LIB_OBJS_NORMAL}
 
@@ -245,6 +246,17 @@ test-ip-acl:
 		docker compose -f tests/docker-compose.ip-acl-test.yml logs teleproxy; \
 		docker compose -f tests/docker-compose.ip-acl-test.yml down -v; exit 1)
 	docker compose -f tests/docker-compose.ip-acl-test.yml down -v
+
+test-config-reload:
+	@export TELEPROXY_SECRET_1=$$(head -c 16 /dev/urandom | xxd -ps) && \
+	export TELEPROXY_SECRET_2=$$(head -c 16 /dev/urandom | xxd -ps) && \
+	export TELEPROXY_SECRET_3=$$(head -c 16 /dev/urandom | xxd -ps) && \
+	echo "Using secrets: $$TELEPROXY_SECRET_1, $$TELEPROXY_SECRET_2 (config), $$TELEPROXY_SECRET_3 (new)" && \
+	timeout 300s docker compose -f tests/docker-compose.config-reload-test.yml up --build --exit-code-from tester || \
+		(echo "Config reload test timed out or failed"; \
+		docker compose -f tests/docker-compose.config-reload-test.yml logs teleproxy; \
+		docker compose -f tests/docker-compose.config-reload-test.yml down -v; exit 1)
+	docker compose -f tests/docker-compose.config-reload-test.yml down -v
 
 test-drs-delays:
 	@if [ -z "$$TELEPROXY_SECRET" ]; then \

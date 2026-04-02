@@ -67,6 +67,7 @@
 #include "engine/engine-net.h"
 #include "net/net-ip-acl.h"
 #include "net/net-tcp-drs.h"
+#include "common/toml-config.h"
 
 #ifndef COMMIT
 #define COMMIT "unknown"
@@ -2426,6 +2427,8 @@ int http_ports_num;
 int http_sfd[MAX_HTTP_LISTEN_PORTS], http_port[MAX_HTTP_LISTEN_PORTS];
 static int domain_count;
 static int secret_count;
+static char *toml_config_path;
+static struct toml_config toml_cfg;
 
 // static double next_create_outbound;
 // int outbound_connections_per_second = DEFAULT_OUTBOUND_CONNECTION_CREATION_RATE;
@@ -2471,6 +2474,41 @@ void mtfront_sigusr1_handler (void) {
   reopen_logs_ext (slave_mode);
   if (workers) {
     kill_children (SIGUSR1);
+  }
+}
+
+static void apply_toml_secrets (struct toml_config *cfg) {
+  unsigned char keys[TOML_CONFIG_MAX_SECRETS][16];
+  char labels[TOML_CONFIG_MAX_SECRETS][EXT_SECRET_LABEL_MAX + 1];
+  int limits[TOML_CONFIG_MAX_SECRETS];
+
+  for (int i = 0; i < cfg->secret_count; i++) {
+    memcpy (keys[i], cfg->secrets[i].key, 16);
+    snprintf (labels[i], sizeof (labels[i]), "%s", cfg->secrets[i].label);
+    limits[i] = cfg->secrets[i].limit;
+  }
+
+  tcp_rpcs_reload_ext_secrets (keys, labels, limits, cfg->secret_count);
+}
+
+static void mtfront_sighup_handler (void) {
+  if (!direct_mode) {
+    int res = do_reload_config (0x4);
+    if (res < 0) {
+      fprintf (stderr, "config check failed! (code %d)\n", res);
+    }
+  }
+
+  ip_acl_reload ();
+
+  if (toml_config_path) {
+    if (toml_config_reload (toml_config_path, &toml_cfg) == 0) {
+      apply_toml_secrets (&toml_cfg);
+    }
+  }
+
+  if (workers) {
+    kill_children (SIGHUP);
   }
 }
 
@@ -2706,6 +2744,9 @@ int f_parse_option (int val) {
       }
     }
     break;
+  case 2006:
+    toml_config_path = strdup (optarg);
+    break;
   default:
     return -1;
   }
@@ -2729,10 +2770,11 @@ void mtfront_prepare_parse_options (void) {
   parse_option ("direct", no_argument, 0, 2003, "connect directly to Telegram DCs instead of through ME relays (incompatible with -P)");
   parse_option ("stats-allow-net", required_argument, 0, 2004, "CIDR range to allow stats access from, e.g. 100.64.0.0/10 (repeatable)");
   parse_option ("dc-override", required_argument, 0, 2005, "override DC address: dc_id:host:port or dc_id:[ipv6]:port (repeatable, direct mode)");
+  parse_option ("config", required_argument, 0, 2006, "path to TOML config file (reloaded on SIGHUP for secrets/ACLs)");
 }
 
 void mtfront_parse_extra_args (int argc, char *argv[]) /* {{{ */ {
-  if (direct_mode) {
+  if (direct_mode || toml_config_path) {
     if (argc > 1) {
       usage ();
       exit (2);
@@ -2753,6 +2795,64 @@ void mtfront_parse_extra_args (int argc, char *argv[]) /* {{{ */ {
 
 // executed BEFORE dropping privileges
 void mtfront_pre_init (void) {
+  /* Load TOML config early — sets direct_mode and other options */
+  if (toml_config_path) {
+    char errbuf[512];
+    if (toml_config_load (toml_config_path, &toml_cfg, errbuf, sizeof (errbuf)) < 0) {
+      kprintf ("config file error: %s\n", errbuf);
+      exit (1);
+    }
+    vkprintf (0, "loaded config from %s\n", toml_config_path);
+
+    /* Apply non-reloadable options (only if not already set via CLI) */
+    if (!direct_mode && toml_cfg.direct == 1) {
+      direct_mode = 1;
+    }
+    if (toml_cfg.proxy_tag[0] && !proxy_tag_set) {
+      unsigned char tag[16];
+      if (toml_config_parse_hex_secret (toml_cfg.proxy_tag, tag) == 0) {
+        memcpy (proxy_tag, tag, 16);
+        proxy_tag_set = 1;
+      }
+    }
+    if (toml_cfg.http_stats == 1) {
+      engine_set_http_fallback (&ct_http_server, &http_methods_stats);
+      mtproto_front_functions.flags &= ~ENGINE_NO_PORT;
+      engine_state->do_not_open_port = 0;
+    }
+    if (toml_cfg.random_padding_only == 1) {
+      tcp_rpcs_set_ext_rand_pad_only (1);
+    }
+    if (toml_cfg.ip_blocklist[0]) {
+      ip_acl_set_blocklist_file (toml_cfg.ip_blocklist);
+    }
+    if (toml_cfg.ip_allowlist[0]) {
+      ip_acl_set_allowlist_file (toml_cfg.ip_allowlist);
+    }
+    for (int i = 0; i < toml_cfg.stats_allow_net_count; i++) {
+      ip_acl_add_stats_net (toml_cfg.stats_allow_nets[i]);
+    }
+    for (int i = 0; i < toml_cfg.domain_count; i++) {
+      tcp_rpc_add_proxy_domain (toml_cfg.domains[i]);
+      domain_count++;
+    }
+    for (int i = 0; i < toml_cfg.dc_override_count; i++) {
+      direct_dc_override (toml_cfg.dc_overrides[i].dc_id,
+                          toml_cfg.dc_overrides[i].host,
+                          toml_cfg.dc_overrides[i].port);
+    }
+    if (toml_cfg.port > 0 && http_ports_num == 0) {
+      http_port[0] = toml_cfg.port;
+      http_ports_num = 1;
+    }
+    if (toml_cfg.workers >= 0 && workers <= 0) {
+      workers = toml_cfg.workers;
+    }
+    if (toml_cfg.max_connections > 0 && max_special_connections == 0) {
+      max_special_connections = toml_cfg.max_connections;
+    }
+  }
+
   if (direct_mode && proxy_tag_set) {
     kprintf ("--direct and -P (proxy tag) are mutually exclusive\n");
     exit (2);
@@ -2776,6 +2876,13 @@ void mtfront_pre_init (void) {
   if (ip_acl_reload () < 0) {
     kprintf ("failed to load IP ACL files\n");
     exit (1);
+  }
+
+  /* Pin CLI -S secrets, then load TOML secrets on top */
+  tcp_rpcs_pin_ext_secrets ();
+  if (toml_config_path && toml_cfg.secret_count > 0) {
+    apply_toml_secrets (&toml_cfg);
+    secret_count = tcp_rpcs_get_ext_secret_count ();
   }
 
   if (domain_count) {
@@ -2933,5 +3040,6 @@ int main (int argc, char *argv[]) {
   mtproto_front_functions.allowed_signals |= SIG2INT (SIGCHLD);
   mtproto_front_functions.signal_handlers[SIGCHLD] = on_child_termination;
   mtproto_front_functions.signal_handlers[SIGUSR1] = mtfront_sigusr1_handler;
+  mtproto_front_functions.signal_handlers[SIGHUP] = mtfront_sighup_handler;
   return default_main (&mtproto_front_functions, argc, argv);
 }
