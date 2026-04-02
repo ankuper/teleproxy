@@ -41,6 +41,14 @@
     yum install openssl-devel zlib-devel
     ```
 
+=== "macOS (разработка)"
+
+    ```bash
+    brew install epoll-shim openssl
+    ```
+
+    Сборка под macOS использует [epoll-shim](https://github.com/jiixyj/epoll-shim) для эмуляции Linux epoll через kqueue, и Homebrew OpenSSL. Предназначено для локальной разработки — в продакшене используйте Linux.
+
 Клонируйте репозиторий и соберите:
 
 ```bash

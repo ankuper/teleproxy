@@ -41,6 +41,14 @@ Install build dependencies:
     yum install openssl-devel zlib-devel
     ```
 
+=== "macOS (development)"
+
+    ```bash
+    brew install epoll-shim openssl
+    ```
+
+    macOS builds use [epoll-shim](https://github.com/jiixyj/epoll-shim) to wrap kqueue behind the Linux epoll API, and Homebrew OpenSSL (keg-only). This is intended for local development — production deployments should use Linux.
+
 Clone and build:
 
 ```bash
