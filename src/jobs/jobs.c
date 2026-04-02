@@ -33,10 +33,14 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef __linux__
 #include <malloc.h>
+#include <linux/futex.h>
+#endif
 #include <sys/syscall.h>
 #include <math.h>
-#include <linux/futex.h>
+
+#include "common/platform.h"
 
 #include "common/proc-stat.h"
 #include "crc32.h"
@@ -761,7 +765,11 @@ void job_send_signals (JOB_REF_ARG (job), int sigset) {
   } else {
     if (job->j_flags & JF_SIGINT) {
       assert (job->j_thread);
+#ifdef __linux__
       pthread_kill (job->j_thread->pthread_id, SIGRTMAX - 7);
+#else
+      pthread_kill (job->j_thread->pthread_id, SIGUSR2);
+#endif
     }
     job_decref (JOB_REF_PASS (job));
   }
@@ -879,7 +887,11 @@ static void set_job_interrupt_signal_handler (void) {
   act.sa_flags = 0;
   act.sa_handler = job_interrupt_signal_handler;
 
+#ifdef __linux__
   if (sigaction (SIGRTMAX - 7, &act, NULL) != 0) {
+#else
+  if (sigaction (SIGUSR2, &act, NULL) != 0) {
+#endif
     kwrite (2, "failed sigaction\n", 17);
     _exit (EXIT_FAILURE);
   }
@@ -892,7 +904,7 @@ void *job_thread_ex (void *arg, void (*work_one)(void *, int)) {
   assert (!(JT->thread_class & ~JC_MASK));
 
   get_this_thread_id ();
-  JT->thread_system_id = syscall (SYS_gettid);
+  JT->thread_system_id = platform_gettid ();
 
   set_job_interrupt_signal_handler ();
 

@@ -37,6 +37,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <assert.h>
+#include "common/platform.h"
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
@@ -144,7 +145,13 @@ void create_main_thread_pipe (void) {
     vkprintf (2, "%s: closing #%d pipe write end file descriptor.\n", __func__, pipe_write_end);
     close (pipe_write_end);
   }
+#ifdef __linux__
   assert (pipe2 (p, O_NONBLOCK) >= 0);
+#else
+  assert (pipe (p) >= 0);
+  fcntl (p[0], F_SETFL, fcntl (p[0], F_GETFL) | O_NONBLOCK);
+  fcntl (p[1], F_SETFL, fcntl (p[1], F_GETFL) | O_NONBLOCK);
+#endif
   pipe_read_end = p[0];
   pipe_write_end = p[1];
 }
@@ -549,7 +556,11 @@ void check_signal_handler (server_functions_t *F, int sig, void (*default_f)(voi
   }
 }
 
+#ifdef __linux__
 unsigned long long default_signal_mask = SIG2INT(SIGHUP) | SIG2INT(SIGUSR1) | SIG2INT(OUR_SIGRTMAX) | SIG2INT(OUR_SIGRTMAX-1) | SIG2INT(OUR_SIGRTMAX-4) | SIG2INT(OUR_SIGRTMAX-8) | SIG2INT(OUR_SIGRTMAX-9);
+#else
+unsigned long long default_signal_mask = SIG2INT(SIGHUP) | SIG2INT(SIGUSR1);
+#endif
 
 static void check_server_functions (void) /* {{{ */ {
   engine_t *E = engine_state;
@@ -558,11 +569,13 @@ static void check_server_functions (void) /* {{{ */ {
 
   check_signal_handler (F, SIGHUP, default_sighup);
   check_signal_handler (F, SIGUSR1, default_sigusr1);
+#ifdef __linux__
   check_signal_handler (F, SIGRTMAX-9, default_sigrtmax_9);
   check_signal_handler (F, SIGRTMAX-8, default_sigrtmax_8);
   check_signal_handler (F, SIGRTMAX-4, default_sigrtmax_4);
   check_signal_handler (F, SIGRTMAX-1, default_sigrtmax_1);
   check_signal_handler (F, SIGRTMAX, default_sigrtmax);
+#endif
 
   if (!F->close_net_sockets) { F->close_net_sockets = default_close_network_sockets; }
   if (!F->cron) { F->cron = default_cron; }
@@ -597,8 +610,10 @@ void engine_startup (engine_t *E, server_functions_t *F) /* {{{ */ {
 
   precise_now_diff = get_utime_monotonic () - get_double_time ();
 
+#ifdef __linux__
   assert (SIGRTMAX == OUR_SIGRTMAX);
   assert (SIGRTMAX - SIGRTMIN >= 20);
+#endif
   
   E->sfd = 0;
   E->epoll_wait_timeout = DEFAULT_EPOLL_WAIT_TIMEOUT;

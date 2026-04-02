@@ -20,24 +20,30 @@
 #include "common/proc-stat.h"
 
 #include <stdio.h>
+#include <string.h>
 
-int read_proc_stats (int pid, int tid, struct proc_stats *s) { 
+int read_proc_stats (int pid, int tid, struct proc_stats *s) {
+#ifndef __linux__
+  (void) pid; (void) tid;
+  memset (s, 0, sizeof (*s));
+  return 0;
+#else
   /*
    * The comm field is enclosed in parentheses and may contain spaces.
    * Parse it as "(%[^)])" instead of "%s" to avoid truncation or misalignment.
    */
-  const char *format = "%d (%255[^)]) %c %d %d %d %d %d %lu %lu %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %lu %lu %ld %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %d %d %lu %lu %llu"; 
+  const char *format = "%d (%255[^)]) %c %d %d %d %d %d %lu %lu %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %lu %lu %ld %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %d %d %lu %lu %llu";
 
-  char buf[256]; 
+  char buf[256];
   if (tid <= 0) {
-    sprintf (buf, "/proc/%d/stat", pid); 
+    sprintf (buf, "/proc/%d/stat", pid);
   } else {
-    sprintf (buf, "/proc/%d/task/%d/stat", pid, tid); 
+    sprintf (buf, "/proc/%d/task/%d/stat", pid, tid);
   }
 
-  FILE *proc = fopen (buf, "r"); 
-  if (proc) { 
-    if (42 == fscanf (proc, format, 
+  FILE *proc = fopen (buf, "r");
+  if (proc) {
+    if (42 == fscanf (proc, format,
           &s->pid,
           s->comm,
           &s->state,
@@ -81,14 +87,15 @@ int read_proc_stats (int pid, int tid, struct proc_stats *s) {
           &s->policy,
           &s->delayacct_blkio_ticks
       )
-    ) { 
-      fclose(proc); 
-      return 1; 
-    } else { 
-      fclose(proc); 
-      return 0; 
-    } 
-  } else {  
-    return 0; 
-  } 
+    ) {
+      fclose(proc);
+      return 1;
+    } else {
+      fclose(proc);
+      return 0;
+    }
+  } else {
+    return 0;
+  }
+#endif
 } 

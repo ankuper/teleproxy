@@ -1,0 +1,19 @@
+name: macOS Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: brew install epoll-shim openssl
+
+    - name: Build
+      run: make -j$(sysctl -n hw.ncpu)

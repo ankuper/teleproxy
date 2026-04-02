@@ -32,8 +32,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifdef __linux__
 #include <linux/futex.h>
 #include <sys/syscall.h>
+#endif
 
 #include "server-functions.h"
 #include "kprintf.h"
@@ -116,7 +118,9 @@ int get_this_thread_id (void) {
   return mpq_this_thread_id = i;
 }
 
-/* custom semaphore implementation using futexes */
+/* custom semaphore implementation */
+
+#if !MPQ_USE_DISPATCH_SEMAPHORES
 
 int mp_sem_post (mp_sem_t *sem) {
   __sync_fetch_and_add (&sem->value, 1);
@@ -161,6 +165,8 @@ int mp_sem_trywait (mp_sem_t *sem) {
   }
   return -1;
 }
+
+#endif /* !MPQ_USE_DISPATCH_SEMAPHORES */
 
 /* functions for one mp_queue_block */
 
@@ -386,7 +392,9 @@ void init_mp_queue (struct mp_queue *MQ) {
 void init_mp_queue_w (struct mp_queue *MQ) {
   init_mp_queue (MQ);
   MODULE_STAT->mpq_active ++;
-#if MPQ_USE_POSIX_SEMAPHORES
+#if MPQ_USE_DISPATCH_SEMAPHORES
+  MQ->mq_sem = dispatch_semaphore_create (0);
+#elif MPQ_USE_POSIX_SEMAPHORES
   sem_init (&MQ->mq_sem, 0, 0);
 #endif
   MQ->mq_magic = MQ_MAGIC_SEM;
@@ -601,7 +609,9 @@ mqn_value_t mpq_pop_w (struct mp_queue *MQ, int flags) {
   assert (MQ->mq_magic == MQ_MAGIC_SEM);
   int s = -1, iterations = flags & MPQF_MAX_ITERATIONS;
   while (iterations --> 0) {
-#if MPQ_USE_POSIX_SEMAPHORES
+#if MPQ_USE_DISPATCH_SEMAPHORES
+    s = dispatch_semaphore_wait (MQ->mq_sem, DISPATCH_TIME_NOW) == 0 ? 0 : -1;
+#elif MPQ_USE_POSIX_SEMAPHORES
     s = sem_trywait (&MQ->mq_sem);
 #else
     s = mp_sem_trywait (&MQ->mq_sem);
@@ -614,7 +624,10 @@ mqn_value_t mpq_pop_w (struct mp_queue *MQ, int flags) {
 #endif
   }
   while (s < 0) {
-#if MPQ_USE_POSIX_SEMAPHORES
+#if MPQ_USE_DISPATCH_SEMAPHORES
+    dispatch_semaphore_wait (MQ->mq_sem, DISPATCH_TIME_FOREVER);
+    s = 0;
+#elif MPQ_USE_POSIX_SEMAPHORES
     s = sem_wait (&MQ->mq_sem);
 #else
     s = mp_sem_wait (&MQ->mq_sem);
@@ -635,7 +648,9 @@ mqn_value_t mpq_pop_nw (struct mp_queue *MQ, int flags) {
   assert (MQ->mq_magic == MQ_MAGIC_SEM);
   int s = -1, iterations = flags & MPQF_MAX_ITERATIONS;
   while (iterations --> 0) {
-#if MPQ_USE_POSIX_SEMAPHORES
+#if MPQ_USE_DISPATCH_SEMAPHORES
+    s = dispatch_semaphore_wait (MQ->mq_sem, DISPATCH_TIME_NOW) == 0 ? 0 : -1;
+#elif MPQ_USE_POSIX_SEMAPHORES
     s = sem_trywait (&MQ->mq_sem);
 #else
     s = mp_sem_trywait (&MQ->mq_sem);
@@ -658,7 +673,9 @@ mqn_value_t mpq_pop_nw (struct mp_queue *MQ, int flags) {
 long mpq_push_w (struct mp_queue *MQ, mqn_value_t v, int flags) {
   assert (MQ->mq_magic == MQ_MAGIC_SEM);
   long res = mpq_push (MQ, v, flags);
-#if MPQ_USE_POSIX_SEMAPHORES
+#if MPQ_USE_DISPATCH_SEMAPHORES
+  dispatch_semaphore_signal (MQ->mq_sem);
+#elif MPQ_USE_POSIX_SEMAPHORES
   assert (sem_post (&MQ->mq_sem) >= 0);
 #else
   assert (mp_sem_post (&MQ->mq_sem) >= 0);

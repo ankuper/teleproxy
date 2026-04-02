@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
+#include "common/platform.h"
 #include "mtproto/mtproto-dc-table.h"
 
 /*
@@ -199,6 +200,7 @@ int direct_dc_probe_ipv6 (void) {
   if (fd < 0) {
     return 0;
   }
+  platform_socket_post_create (fd);
 
   struct sockaddr_in6 addr;
   memset (&addr, 0, sizeof (addr));

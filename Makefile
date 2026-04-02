@@ -20,8 +20,28 @@ endif
 HOST_ARCH := $(shell arch)
 
 # Default CFLAGS and LDFLAGS
-COMMON_CFLAGS := -O3 -std=gnu11 -Wall -fno-strict-aliasing -fno-strict-overflow -fwrapv -DAES=1 -DCOMMIT=\"${COMMIT}\" -DVERSION=\"${VERSION}\" -D_GNU_SOURCE=1 -D_FILE_OFFSET_BITS=64 -Wno-array-bounds -Wno-implicit-function-declaration
-COMMON_LDFLAGS := -ggdb -rdynamic -lm -lrt -lcrypto -lz -lpthread
+COMMON_CFLAGS := -O3 -std=gnu11 -Wall -fno-strict-aliasing -fno-strict-overflow -fwrapv -DAES=1 -DCOMMIT=\"${COMMIT}\" -DVERSION=\"${VERSION}\" -D_FILE_OFFSET_BITS=64 -Wno-array-bounds -Wno-implicit-function-declaration
+
+# Platform-specific flags
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S), Darwin)
+  # macOS: no -lrt (in libc), no -rdynamic (use -Wl,-export_dynamic or omit),
+  # epoll-shim provides sys/epoll.h via kqueue, Homebrew OpenSSL is keg-only
+  # Use the interpose variant to avoid macro conflicts (close, read, write)
+  EPOLL_SHIM_CFLAGS := $(shell pkg-config --cflags epoll-shim-interpose 2>/dev/null)
+  EPOLL_SHIM_LDFLAGS := $(shell pkg-config --libs epoll-shim-interpose 2>/dev/null)
+  ifeq ($(EPOLL_SHIM_LDFLAGS),)
+    $(error macOS build requires epoll-shim: brew install epoll-shim openssl)
+  endif
+  OPENSSL_CFLAGS := $(shell pkg-config --cflags openssl 2>/dev/null)
+  OPENSSL_LDFLAGS := $(shell pkg-config --libs openssl 2>/dev/null)
+  COMMON_CFLAGS += -D_GNU_SOURCE=1 $(EPOLL_SHIM_CFLAGS) $(OPENSSL_CFLAGS)
+  COMMON_LDFLAGS := -ggdb -lm -lz -lpthread $(EPOLL_SHIM_LDFLAGS) $(OPENSSL_LDFLAGS)
+else
+  # Linux
+  COMMON_CFLAGS += -D_GNU_SOURCE=1
+  COMMON_LDFLAGS := -ggdb -rdynamic -lm -lrt -lcrypto -lz -lpthread
+endif
 
 # Auto-detect libunwind for stack traces on musl/Alpine (test/CI builds)
 LIBUNWIND_CFLAGS := $(shell pkg-config --cflags libunwind 2>/dev/null)

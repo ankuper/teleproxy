@@ -35,6 +35,7 @@
 #include <math.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include "common/platform.h"
 #include <pthread.h>
 #include <stddef.h>
 #include <stdio.h>

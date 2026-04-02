@@ -21,10 +21,17 @@
 
 #pragma once
 
-#define MPQ_USE_POSIX_SEMAPHORES	0
-
-#if MPQ_USE_POSIX_SEMAPHORES
-#include <semaphore.h>
+#ifdef __APPLE__
+  /* macOS: sem_init returns ENOSYS; use GCD dispatch semaphores instead */
+  #define MPQ_USE_POSIX_SEMAPHORES  0
+  #define MPQ_USE_DISPATCH_SEMAPHORES 1
+  #include <dispatch/dispatch.h>
+#else
+  #define MPQ_USE_POSIX_SEMAPHORES  0
+  #define MPQ_USE_DISPATCH_SEMAPHORES 0
+  #if MPQ_USE_POSIX_SEMAPHORES
+    #include <semaphore.h>
+  #endif
 #endif
 
 typedef struct mp_semaphore {
@@ -90,7 +97,9 @@ struct mp_queue {
   struct mp_queue_block *mq_head __attribute__ ((aligned(64)));
   int mq_magic;
   struct mp_queue_block *mq_tail __attribute__ ((aligned(64)));
-#if MPQ_USE_POSIX_SEMAPHORES
+#if MPQ_USE_DISPATCH_SEMAPHORES
+  dispatch_semaphore_t mq_sem __attribute__ ((aligned(64)));
+#elif MPQ_USE_POSIX_SEMAPHORES
   sem_t mq_sem __attribute__ ((aligned(64)));
 #else
   mp_sem_t mq_sem __attribute__ ((aligned(64)));
@@ -136,9 +145,11 @@ long mpq_push_w (struct mp_queue *MQ, mqn_value_t val, int flags);
 mqn_value_t mpq_pop_w (struct mp_queue *MQ, int flags);
 mqn_value_t mpq_pop_nw (struct mp_queue *MQ, int flags);
 
+#if !MPQ_USE_DISPATCH_SEMAPHORES
 int mp_sem_post (mp_sem_t *sem);
 int mp_sem_wait (mp_sem_t *sem);
 int mp_sem_trywait (mp_sem_t *sem);
+#endif
 
 #define COMMON_HAZARD_PTR_NUM 3
 int is_hazard_ptr (void *ptr, int a, int b);

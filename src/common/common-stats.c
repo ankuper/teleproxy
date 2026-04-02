@@ -92,6 +92,12 @@ static int parse_statm (const char *buf, long long *a, int m) {
 }
 
 int am_get_memory_usage (pid_t pid, long long *a, int m) {
+#ifndef __linux__
+  (void) pid;
+  int i;
+  for (i = 0; i < m; i++) { a[i] = 0; }
+  return -1;
+#else
   char proc_filename[32];
   char buf[4096];
   assert (snprintf (proc_filename, sizeof (proc_filename), "/proc/%d/statm",  (int) pid) < sizeof (proc_filename));
@@ -99,6 +105,7 @@ int am_get_memory_usage (pid_t pid, long long *a, int m) {
     return -1;
   }
   return parse_statm (buf, a, m);
+#endif
 }
 
 int am_get_memory_stats (am_memory_stat_t *S, int flags) {
