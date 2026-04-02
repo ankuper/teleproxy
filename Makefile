@@ -106,7 +106,7 @@ LIB_OBJS_NORMAL := \
 	${OBJ}/src/net/net-connections.o \
 	${OBJ}/src/net/net-rpc-targets.o \
 	${OBJ}/src/net/net-tcp-connections.o ${OBJ}/src/net/net-tcp-drs.o ${OBJ}/src/net/net-tcp-rpc-common.o ${OBJ}/src/net/net-tcp-rpc-client.o ${OBJ}/src/net/net-tcp-rpc-server.o \
-	${OBJ}/src/net/net-http-server.o ${OBJ}/src/net/net-http-parse.o ${OBJ}/src/net/net-tls-parse.o ${OBJ}/src/net/net-ip-acl.o \
+	${OBJ}/src/net/net-http-server.o ${OBJ}/src/net/net-http-parse.o ${OBJ}/src/net/net-tls-parse.o ${OBJ}/src/net/net-obfs2-parse.o ${OBJ}/src/net/net-ip-acl.o \
 	${OBJ}/src/common/tl-parse.o ${OBJ}/src/common/common-stats.o \
 	${OBJ}/src/engine/engine.o ${OBJ}/src/engine/engine-signals.o \
 	${OBJ}/src/engine/engine-net.o \

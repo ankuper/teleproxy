@@ -49,6 +49,7 @@
 #include "net/net-tcp-connections.h"
 #include "net/net-tcp-drs.h"
 #include "net/net-tcp-rpc-ext-server.h"
+#include "net/net-obfs2-parse.h"
 #include "net/net-tls-parse.h"
 #include "net/net-thread.h"
 #include "mtproto/mtproto-dc-table.h"
@@ -1777,80 +1778,53 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
       }
 
       unsigned char random_header[64];
-      unsigned char k[48];
       assert (rwm_fetch_lookup (&c->in, random_header, 64) == 64);
-        
-      unsigned char random_header_sav[64];
-      memcpy (random_header_sav, random_header, 64);
-      
-      struct aes_key_data key_data;
-      
-      int ok = 0;
-      int secret_id;
-      for (secret_id = 0; secret_id < 1 || secret_id < ext_secret_cnt; secret_id++) {
-        if (ext_secret_cnt > 0) {
-          memcpy (k, random_header + 8, 32);
-          memcpy (k + 32, ext_secret[secret_id], 16);
-          sha256 (k, 48, key_data.read_key);
-        } else {
-          memcpy (key_data.read_key, random_header + 8, 32);
-        }
-        memcpy (key_data.read_iv, random_header + 40, 16);
 
-        int i;
-        for (i = 0; i < 32; i++) {
-          key_data.write_key[i] = random_header[55 - i];
-        }
-        for (i = 0; i < 16; i++) {
-          key_data.write_iv[i] = random_header[23 - i];
-        }
+      /* Save ciphertext — needed to re-init crypto with counter at byte 64 */
+      unsigned char random_header_ct[64];
+      memcpy (random_header_ct, random_header, 64);
 
-        if (ext_secret_cnt > 0) {
-          memcpy (k, key_data.write_key, 32);
-          sha256 (k, 48, key_data.write_key);
-        }
+      struct obfs2_parse_result pr;
+      int ok = (obfs2_parse_header (random_header,
+                  ext_secret_cnt > 0 ? (const unsigned char (*)[16])ext_secret : NULL,
+                  ext_secret_cnt, ext_rand_pad_only, &pr) == 0);
 
-        aes_crypto_ctr128_init (C, &key_data, sizeof (key_data));
-        assert (c->crypto);
-        struct aes_crypto *T = c->crypto;
+      if (ok) {
+          unsigned tag = pr.tag;
+          int secret_id = pr.secret_id;
 
-        evp_crypt (T->read_aeskey, random_header, random_header, 64);
-        unsigned tag = *(unsigned *)(random_header + 56);
-
-        if (tag == 0xdddddddd || ((tag == 0xeeeeeeee || tag == 0xefefefef) && !ext_rand_pad_only)) {
-          if (tag != 0xdddddddd && allow_only_tls) {
+          if (tag != OBFS2_TAG_PAD && allow_only_tls) {
             vkprintf (1, "Expected random padding mode\n");
             RETURN_TLS_ERROR(default_domain_info);
           }
+
+          /* Set up connection crypto and advance CTR counter past the 64-byte header */
+          aes_crypto_ctr128_init (C, &pr.keys, sizeof (pr.keys));
+          assert (c->crypto);
+          struct aes_crypto *T = c->crypto;
+          evp_crypt (T->read_aeskey, random_header_ct, random_header_ct, 64);
+
           assert (rwm_skip_data (&c->in, 64) == 64);
           rwm_union (&c->in_u, &c->in);
           rwm_init (&c->in, 0);
-          // T->read_pos = 64;
           D->in_packet_num = 0;
           switch (tag) {
-            case 0xeeeeeeee:
+            case OBFS2_TAG_MEDIUM:
               D->flags |= RPC_F_MEDIUM | RPC_F_EXTMODE2;
               break;
-            case 0xdddddddd:
+            case OBFS2_TAG_PAD:
               D->flags |= RPC_F_MEDIUM | RPC_F_EXTMODE2 | RPC_F_PAD;
               break;
-            case 0xefefefef:
+            case OBFS2_TAG_COMPACT:
               D->flags |= RPC_F_COMPACT | RPC_F_EXTMODE2;
               break;
           }
           assert (c->type->crypto_decrypt_input (C) >= 0);
 
-          int target = *(short *)(random_header + 60);
-          D->extra_int4 = target;
+          D->extra_int4 = pr.dc;
           D->extra_int2 = secret_id + 1;
           D->extra_int3 = (int)tag;  /* client transport tag for direct mode */
-          vkprintf (1, "tcp opportunistic encryption mode detected, tag = %08x, target=%d, secret [%s]\n", tag, target, ext_secret_label[secret_id]);
-          ok = 1;
-          break;
-        } else {
-          aes_crypto_free (C);
-          memcpy (random_header, random_header_sav, 64);
-        }
+          vkprintf (1, "tcp opportunistic encryption mode detected, tag = %08x, target=%d, secret [%s]\n", tag, pr.dc, ext_secret_label[secret_id]);
       }
 
       if (ok) {

@@ -6,9 +6,14 @@ FUZZ_DURATION ?= 60
 TEST_COMPAT = $(shell [ "$$(uname)" = "Darwin" ] && echo "-DSOCK_NONBLOCK=0 -DSOCK_CLOEXEC=0")
 TEST_CFLAGS = -g -O1 -std=gnu11 -Wall -D_GNU_SOURCE=1 $(TEST_COMPAT)
 
-TARGETS = fuzz_tls_server_hello fuzz_tls_client_hello fuzz_http_request
+# OpenSSL paths (Homebrew keg-only on macOS, system default elsewhere)
+OPENSSL_CFLAGS := $(shell pkg-config --cflags openssl 2>/dev/null)
+OPENSSL_LIBS := $(shell pkg-config --libs openssl 2>/dev/null || echo "-lssl -lcrypto")
+
+TARGETS = fuzz_tls_server_hello fuzz_tls_client_hello fuzz_http_request fuzz_obfs2_header fuzz_obfs2_frame
 TEST_TARGETS = test_dc_lookup
 PARSE_OBJS = net-tls-parse.o net-http-parse.o stubs.o
+OBFS2_OBJS = net-obfs2-parse.o sha256.o aesni256.o stubs.o
 
 .PHONY: all clean run test
 
@@ -19,6 +24,15 @@ net-tls-parse.o: ../src/net/net-tls-parse.c ../src/net/net-tls-parse.h
 
 net-http-parse.o: ../src/net/net-http-parse.c ../src/net/net-http-parse.h ../src/net/net-http-server.h
 	$(CC) $(FUZZ_CFLAGS) $(FUZZ_CINCLUDE) -c -o $@ $<
+
+net-obfs2-parse.o: ../src/net/net-obfs2-parse.c ../src/net/net-obfs2-parse.h
+	$(CC) $(FUZZ_CFLAGS) $(FUZZ_CINCLUDE) $(OPENSSL_CFLAGS) -c -o $@ $<
+
+sha256.o: ../src/common/sha256.c ../src/common/sha256.h
+	$(CC) $(FUZZ_CFLAGS) $(FUZZ_CINCLUDE) $(OPENSSL_CFLAGS) -c -o $@ $<
+
+aesni256.o: ../src/crypto/aesni256.c ../src/crypto/aesni256.h
+	$(CC) $(FUZZ_CFLAGS) $(FUZZ_CINCLUDE) $(OPENSSL_CFLAGS) -c -o $@ $<
 
 stubs.o: stubs.c
 	$(CC) $(FUZZ_CFLAGS) $(FUZZ_CINCLUDE) -c -o $@ $<
@@ -31,6 +45,12 @@ fuzz_tls_client_hello: fuzz_tls_client_hello.c net-tls-parse.o stubs.o
 
 fuzz_http_request: fuzz_http_request.c net-http-parse.o stubs.o
 	$(CC) $(FUZZ_CFLAGS) $(FUZZ_CINCLUDE) -o $@ $^
+
+fuzz_obfs2_header: fuzz_obfs2_header.c $(OBFS2_OBJS)
+	$(CC) $(FUZZ_CFLAGS) $(FUZZ_CINCLUDE) $(OPENSSL_CFLAGS) -o $@ $^ $(OPENSSL_LIBS)
+
+fuzz_obfs2_frame: fuzz_obfs2_frame.c stubs.o net-obfs2-parse.o sha256.o aesni256.o
+	$(CC) $(FUZZ_CFLAGS) $(FUZZ_CINCLUDE) $(OPENSSL_CFLAGS) -o $@ $^ $(OPENSSL_LIBS)
 
 run: $(TARGETS)
 	@failed=0; \
@@ -51,4 +71,4 @@ test: $(TEST_TARGETS)
 	@for t in $(TEST_TARGETS); do echo "=== $$t ==="; ./$$t || exit 1; done
 
 clean:
-	rm -f $(TARGETS) $(TEST_TARGETS) $(PARSE_OBJS) mtproto-dc-table.o
+	rm -f $(TARGETS) $(TEST_TARGETS) $(PARSE_OBJS) $(OBFS2_OBJS) mtproto-dc-table.o
