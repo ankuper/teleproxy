@@ -570,14 +570,18 @@ static void tcp_direct_dc_send_obfs2_init (connection_job_t C) {
 
 /* ── SOCKS5 handshake helpers ───────────────────────────────── */
 
+/* SOCKS5 data goes to c->out (pre-crypto buffer).  Without crypto,
+   the writer flushes c->out directly.  c->out_p is only flushed when
+   crypto is set — which happens after the SOCKS5 handshake. */
+
 static void socks5_send_greeting (connection_job_t C) {
   struct connection_info *c = CONN_INFO(C);
   if (socks5_config.user[0]) {
     unsigned char buf[] = {0x05, 0x02, 0x00, 0x02};  /* no-auth + user/pass */
-    rwm_push_data (&c->out_p, buf, 4);
+    rwm_push_data (&c->out, buf, 4);
   } else {
     unsigned char buf[] = {0x05, 0x01, 0x00};  /* no-auth only */
-    rwm_push_data (&c->out_p, buf, 3);
+    rwm_push_data (&c->out, buf, 3);
   }
 }
 
@@ -591,7 +595,7 @@ static void socks5_send_auth (connection_job_t C) {
   memcpy (buf + 2, socks5_config.user, ulen);
   buf[2 + ulen] = (unsigned char) plen;
   memcpy (buf + 3 + ulen, socks5_config.pass, plen);
-  rwm_push_data (&c->out_p, buf, 3 + ulen + plen);
+  rwm_push_data (&c->out, buf, 3 + ulen + plen);
 }
 
 static void socks5_send_connect (connection_job_t C) {
@@ -626,7 +630,7 @@ static void socks5_send_connect (connection_job_t C) {
     buf[9] = addr->port & 0xff;
     len = 10;
   }
-  rwm_push_data (&c->out_p, buf, len);
+  rwm_push_data (&c->out, buf, len);
 }
 
 /* Process SOCKS5 handshake responses.  Returns:
