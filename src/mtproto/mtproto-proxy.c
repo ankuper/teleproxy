@@ -62,6 +62,7 @@
 #include "net/net-crypto-dh.h"
 #include "mtproto-check.h"
 #include "mtproto-link.h"
+#include "qrcode/qrcodegen.h"
 #include "mtproto-common.h"
 #include "mtproto-config.h"
 #include "mtproto-dc-table.h"
@@ -1746,6 +1747,10 @@ static inline int is_private_ip (unsigned ip) {
       || (ip >> 16) == 0xC0A8;   // 192.168.0.0/16
 }
 
+/* forward declaration — defined after static variable block */
+static void mtfront_prepare_link_page (stats_buffer_t *sb,
+                                       const char *host, int host_len);
+
 int hts_stats_execute (connection_job_t c, struct raw_message *msg, int op) {
   struct hts_data *D = HTS_DATA(c);
 
@@ -1767,8 +1772,9 @@ int hts_stats_execute (connection_job_t c, struct raw_message *msg, int op) {
 
   int is_stats = (D->uri_size == 6 && !memcmp (ReqHdr + D->uri_offset, "/stats", 6));
   int is_metrics = (D->uri_size == 8 && !memcmp (ReqHdr + D->uri_offset, "/metrics", 8));
+  int is_link = (D->uri_size == 5 && !memcmp (ReqHdr + D->uri_offset, "/link", 5));
 
-  if (!is_stats && !is_metrics) {
+  if (!is_stats && !is_metrics && !is_link) {
     return -404;
   }
 
@@ -1776,7 +1782,10 @@ int hts_stats_execute (connection_job_t c, struct raw_message *msg, int op) {
   sb_alloc(&sb, 1 << 20);
 
   const char *content_type;
-  if (is_metrics) {
+  if (is_link) {
+    mtfront_prepare_link_page (&sb, ReqHdr + D->host_offset, D->host_size);
+    content_type = "text/html; charset=utf-8";
+  } else if (is_metrics) {
     mtfront_prepare_prometheus_stats(&sb);
     content_type = "text/plain; version=0.0.4; charset=utf-8";
   } else {
@@ -2456,6 +2465,145 @@ static struct toml_config toml_cfg;
 
 // static double next_create_outbound;
 // int outbound_connections_per_second = DEFAULT_OUTBOUND_CONNECTION_CREATION_RATE;
+
+/* ── /link endpoint: HTML page with SVG QR codes ─────────────── */
+
+static void sb_qr_svg (stats_buffer_t *sb, const char *url) {
+  uint8_t qrcode[qrcodegen_BUFFER_LEN_MAX];
+  uint8_t temp[qrcodegen_BUFFER_LEN_MAX];
+
+  if (!qrcodegen_encodeText (url, temp, qrcode, qrcodegen_Ecc_LOW,
+                             qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX,
+                             qrcodegen_Mask_AUTO, true)) {
+    sb_printf (sb, "<p>QR encoding failed</p>\n");
+    return;
+  }
+
+  int size = qrcodegen_getSize (qrcode);
+  int margin = 2;
+  int full = size + 2 * margin;
+
+  sb_printf (sb, "<svg viewBox=\"0 0 %d %d\" xmlns=\"http://www.w3.org/2000/svg\">"
+             "<rect width=\"%d\" height=\"%d\" fill=\"#fff\"/>",
+             full, full, full, full);
+
+  for (int y = 0; y < size; y++) {
+    for (int x = 0; x < size; x++) {
+      if (qrcodegen_getModule (qrcode, x, y)) {
+        sb_printf (sb, "<rect x=\"%d\" y=\"%d\" width=\"1\" height=\"1\"/>",
+                   x + margin, y + margin);
+      }
+    }
+  }
+  sb_printf (sb, "</svg>");
+}
+
+static void mtfront_prepare_link_page (stats_buffer_t *sb,
+                                       const char *host, int host_len) {
+  char server[256];
+  int slen = host_len;
+  if (slen >= (int)sizeof (server)) {
+    slen = sizeof (server) - 1;
+  }
+  memcpy (server, host, slen);
+  server[slen] = '\0';
+
+  /* Strip port suffix (e.g., "1.2.3.4:8888" → "1.2.3.4") */
+  char *colon = strrchr (server, ':');
+  if (colon && strchr (server, '.')) {
+    *colon = '\0';
+  }
+  /* For IPv6 [::1]:8888, strip bracket+port */
+  if (server[0] == '[') {
+    char *bracket = strchr (server, ']');
+    if (bracket) {
+      *bracket = '\0';
+      memmove (server, server + 1, strlen (server + 1) + 1);
+    }
+  }
+
+  int port = http_port[0];
+
+  sb_printf (sb,
+    "<!DOCTYPE html><html><head>"
+    "<meta charset=\"utf-8\">"
+    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+    "<title>Teleproxy</title>"
+    "<style>"
+    "*{box-sizing:border-box;margin:0;padding:0}"
+    "body{font-family:system-ui,-apple-system,sans-serif;background:#f5f5f5;"
+    "min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:2rem 1rem}"
+    ".card{background:#fff;border-radius:12px;padding:1.5rem;margin:1rem 0;"
+    "box-shadow:0 1px 3px rgba(0,0,0,.1);text-align:center;width:100%%;max-width:400px}"
+    ".card svg{width:100%%;max-width:280px;height:auto;margin:1rem auto;display:block}"
+    ".label{font-size:.85rem;font-weight:600;color:#666;margin-bottom:.5rem}"
+    ".url{word-break:break-all;font-size:.8rem;color:#0066cc;text-decoration:none;"
+    "display:block;margin-top:.75rem}"
+    ".url:hover{text-decoration:underline}"
+    "h1{font-size:1.25rem;color:#333;margin-bottom:.5rem}"
+    "p.hint{font-size:.8rem;color:#999}"
+    "</style></head><body>"
+    "<h1>Connection Links</h1>"
+    "<p class=\"hint\">Tap a QR code to open in Telegram</p>\n");
+
+  int n = toml_cfg.secret_count;
+  for (int i = 0; i < n; i++) {
+    char secret_hex[1024];
+    int pos = 0;
+
+    if (toml_cfg.domain_count > 0 && toml_cfg.domains[0][0]) {
+      pos += snprintf (secret_hex + pos, sizeof (secret_hex) - pos, "ee");
+      for (int j = 0; j < 16; j++) {
+        pos += snprintf (secret_hex + pos, sizeof (secret_hex) - pos,
+                         "%02x", toml_cfg.secrets[i].key[j]);
+      }
+      const char *dom = toml_cfg.domains[0];
+      const char *dom_colon = strchr (dom, ':');
+      int dom_len = dom_colon ? (int)(dom_colon - dom) : (int)strlen (dom);
+      for (int j = 0; j < dom_len; j++) {
+        pos += snprintf (secret_hex + pos, sizeof (secret_hex) - pos,
+                         "%02x", (unsigned char)dom[j]);
+      }
+    } else if (toml_cfg.random_padding_only == 1) {
+      pos += snprintf (secret_hex + pos, sizeof (secret_hex) - pos, "dd");
+      for (int j = 0; j < 16; j++) {
+        pos += snprintf (secret_hex + pos, sizeof (secret_hex) - pos,
+                         "%02x", toml_cfg.secrets[i].key[j]);
+      }
+    } else {
+      for (int j = 0; j < 16; j++) {
+        pos += snprintf (secret_hex + pos, sizeof (secret_hex) - pos,
+                         "%02x", toml_cfg.secrets[i].key[j]);
+      }
+    }
+
+    char url[2048];
+    snprintf (url, sizeof (url),
+              "https://t.me/proxy?server=%s&port=%d&secret=%s",
+              server, port, secret_hex);
+
+    char tg_url[2048];
+    snprintf (tg_url, sizeof (tg_url),
+              "tg://proxy?server=%s&port=%d&secret=%s",
+              server, port, secret_hex);
+
+    sb_printf (sb, "<div class=\"card\">\n");
+    if (toml_cfg.secrets[i].label[0]) {
+      sb_printf (sb, "<div class=\"label\">%s</div>\n", toml_cfg.secrets[i].label);
+    }
+    sb_printf (sb, "<a href=\"%s\">", tg_url);
+    sb_qr_svg (sb, url);
+    sb_printf (sb, "</a>\n");
+    sb_printf (sb, "<a class=\"url\" href=\"%s\">%s</a>\n", tg_url, url);
+    sb_printf (sb, "</div>\n");
+  }
+
+  if (n == 0) {
+    sb_printf (sb, "<div class=\"card\"><p>No secrets configured</p></div>\n");
+  }
+
+  sb_printf (sb, "</body></html>\n");
+}
 
 void mtfront_pre_loop (void) {
   int i, enable_ipv6 = (ipv6_enabled && !engine_state->settings_addr.s_addr) ? SM_IPV6 : 0;

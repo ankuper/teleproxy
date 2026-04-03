@@ -277,6 +277,8 @@ done
 if [ "$_host" = "<YOUR_SERVER_IP>" ]; then
     echo "(Set EXTERNAL_IP to show your server's IP)"
 fi
+echo ""
+echo "QR codes: http://${_host}:${STATS_PORT}/link"
 echo "============================="
 echo ""
 

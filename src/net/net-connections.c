@@ -327,8 +327,12 @@ void connection_write_close (connection_job_t C) /* {{{ */ {
 
 /* qack {{{ */
 static inline void disable_qack (int fd) {
+#if TCP_QUICKACK
   vkprintf (2, "disable TCP_QUICKACK for %d\n", fd);
   assert (setsockopt (fd, IPPROTO_TCP, TCP_QUICKACK, (int[]){0}, sizeof (int)) >= 0);
+#else
+  (void)fd;
+#endif
 }
 /* }}} */
 
