@@ -60,6 +60,7 @@
 #include "net/net-tcp-rpc-ext-server.h"
 #include "net/net-crypto-aes.h"
 #include "net/net-crypto-dh.h"
+#include "mtproto-check.h"
 #include "mtproto-common.h"
 #include "mtproto-config.h"
 #include "mtproto-dc-table.h"
@@ -2542,6 +2543,7 @@ static void mtfront_sighup_handler (void) {
 
 void usage (void) {
   printf ("usage: %s [options] [relay-config]\n", progname);
+  printf ("       %s check [--config FILE] [--direct] [-S SECRET] [-D DOMAIN]\n", progname);
   printf ("       %s generate-secret [domain]\n", progname);
   printf ("%s\n", FullVersionStr);
   printf ("\tMTProto proxy for Telegram\n");
@@ -3080,6 +3082,9 @@ static int cmd_generate_secret (int argc, char *argv[]) {
 
 int main (int argc, char *argv[]) {
   /* Subcommand dispatch — checked before engine init */
+  if (argc >= 2 && !strcmp (argv[1], "check")) {
+    return cmd_check (argc - 1, argv + 1);
+  }
   if (argc >= 2 && !strcmp (argv[1], "generate-secret")) {
     return cmd_generate_secret (argc - 2, argv + 2);
   }

@@ -1,0 +1,12 @@
+FROM alpine:3.21 AS builder
+RUN apk add --no-cache build-base openssl-dev zlib-dev linux-headers git
+WORKDIR /src
+COPY . .
+RUN make clean && make -j$(nproc)
+
+FROM alpine:3.21
+RUN apk add --no-cache python3 openssl zlib
+COPY --from=builder /src/objs/bin/teleproxy /usr/local/bin/teleproxy
+WORKDIR /app
+COPY tests/test_check.py .
+CMD ["python3", "test_check.py"]
