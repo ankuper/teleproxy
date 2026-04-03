@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.5.0]
+
+QR codes for connection links.
+
+- `teleproxy link` subcommand prints a proxy URL and renders a scannable QR code in the terminal using UTF-8 half-block characters
+- Docker `start.sh` and `install.sh` now display QR codes automatically at startup — point a phone camera at the screen to connect
+- Vendored nayuki/QR-Code-generator (MIT) for zero-dependency QR rendering on any platform
+- E2E tests decode the rendered QR output with pyzbar and verify it matches the expected URL
+- Documentation: new "Connection Links" page (en + ru)
+
 ## [4.4.0]
 
 TOML config file, SIGHUP secret reload, and one-liner installer.
