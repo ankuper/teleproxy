@@ -1,1 +1,5 @@
 blank_issues_enabled: true
+contact_links:
+  - name: Support this project
+    url: https://t.me/tribute/app?startapp=dIa9
+    about: "Teleproxy is maintained in one person's spare time. Donations help keep it alive."

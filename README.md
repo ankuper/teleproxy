@@ -3,10 +3,21 @@
 [![CI](https://github.com/teleproxy/teleproxy/actions/workflows/test.yml/badge.svg)](https://github.com/teleproxy/teleproxy/actions/workflows/test.yml)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker)](https://github.com/teleproxy/teleproxy/pkgs/container/teleproxy)
 [![License: GPLv2](https://img.shields.io/badge/license-GPLv2-blue.svg)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/teleproxy/teleproxy?style=flat&label=stars)](https://github.com/teleproxy/teleproxy)
+[![Release](https://img.shields.io/github/v/release/teleproxy/teleproxy?label=release)](https://github.com/teleproxy/teleproxy/releases/latest)
+[![Telegram](https://img.shields.io/badge/telegram-@teleproxy__dev-blue?logo=telegram)](https://t.me/teleproxy_dev)
 
 High-performance MTProto proxy for Telegram with DPI resistance, fake-TLS camouflage, and production-grade monitoring.
 
 **[Documentation](https://teleproxy.github.io)** | **[Docker Quick Start](https://teleproxy.github.io/docker/)** | **[Comparison](https://teleproxy.github.io/comparison/)** | **[Telegram](https://t.me/teleproxy_dev)**
+
+> [!NOTE]
+> Teleproxy is maintained by one person. If it's useful to you, consider supporting development.
+>
+> | | |
+> |---|---|
+> | Telegram | **[Donate via Tribute](https://t.me/tribute/app?startapp=dIa9)** (cards, worldwide) |
+> | Web | **[Donate via Tribute](https://web.tribute.tg/d/Ia9)** |
 
 <details>
 <summary>🎵 Ghost Protocol — the unofficial anthem</summary>
