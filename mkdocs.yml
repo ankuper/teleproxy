@@ -162,6 +162,7 @@ nav:
     - IP Access Control: features/access-control.md
     - Secrets & Limits: features/secrets.md
     - Monitoring: features/monitoring.md
+    - SOCKS5 Upstream Proxy: features/socks5.md
     - Connection Links: features/link.md
     - Diagnostics: features/diagnostics.md
   - Deployment:

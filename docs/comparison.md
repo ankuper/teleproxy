@@ -17,7 +17,7 @@ Teleproxy is a fork of the original [TelegramMessenger/MTProxy](https://github.c
 | Dynamic Record Sizing (DRS) | No | Yes | Yes | No |
 | Traffic mimicry (DRS + timing) | No | Yes | Yes | No |
 | ServerHello fragmentation | No | Yes | No | No |
-| SOCKS5 upstream proxy | No | No | Yes | Yes |
+| SOCKS5 upstream proxy | No | Yes | Yes | Yes |
 | ***Access control*** | | | | |
 | IP blocklist / allowlist | No | Yes | Yes | No |
 | Per-user unique IP limits | No | No | No | Yes |

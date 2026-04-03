@@ -17,7 +17,7 @@ Teleproxy là một fork của [TelegramMessenger/MTProxy](https://github.com/Te
 | Dynamic Record Sizing (DRS) | Không | Có | Có | Không |
 | Giả lập traffic (DRS + timing) | Không | Có | Có | Không |
 | Phân mảnh ServerHello | Không | Có | Không | Không |
-| SOCKS5 upstream proxy | Không | Không | Có | Có |
+| SOCKS5 upstream proxy | Không | Có | Có | Có |
 | ***Kiểm soát truy cập*** | | | | |
 | IP blocklist / allowlist | Không | Có | Có | Không |
 | Giới hạn IP theo user | Không | Không | Không | Có |

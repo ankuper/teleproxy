@@ -19,6 +19,7 @@
 | `IP_BLOCKLIST` | — | Path to CIDR blocklist file |
 | `IP_ALLOWLIST` | — | Path to CIDR allowlist file |
 | `STATS_ALLOW_NET` | — | Comma-separated CIDR ranges to allow stats access from (e.g. `100.64.0.0/10,fd00::/8`) |
+| `SOCKS5_PROXY` | — | Route upstream DC connections through a SOCKS5 proxy (`socks5://[user:pass@]host:port`) |
 | `DC_OVERRIDE` | — | Comma-separated DC address overrides for direct mode (e.g. `2:1.2.3.4:443,2:5.6.7.8:443`) |
 
 Maximum 16 secrets (binary limit).
