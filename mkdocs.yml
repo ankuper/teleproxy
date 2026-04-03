@@ -175,9 +175,9 @@ nav:
     - Connection Links: features/link.md
     - Diagnostics: features/diagnostics.md
   - Deployment:
-    - Cloud Deploy: https://teleproxy.github.io/deploy/
     - Systemd: deployment/systemd.md
     - IPv6: deployment/ipv6.md
+    - Cloud Deploy: https://teleproxy.github.io/deploy/
   - Testing: testing.md
   - Changelog: changelog.md
   - Observatory: https://teleproxy.github.io/observatory/
