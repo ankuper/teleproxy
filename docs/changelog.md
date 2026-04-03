@@ -1,5 +1,20 @@
 # Changelog
 
+## 4.6.0
+
+DPI resistance and operational improvements.
+
+- **ServerHello size variation** widened from ±1 to ±32 bytes, mimicking the natural variation in certificate chain and session ticket sizes seen from real TLS servers
+- **ServerHello fragmentation**: ServerHello and CCS+AppData are now sent as separate TCP segments, defeating DPI that pattern-matches the full handshake response in a single packet
+- Docker healthcheck respects custom `STATS_PORT` — previously hardcoded to 8888, now uses `${STATS_PORT:-8888}` ([#38](https://github.com/teleproxy/teleproxy/issues/38))
+- `install.sh` supports multiple secrets via comma-separated `SECRET` or numbered `SECRET_N` variables
+- `/link` endpoint serves connection links as HTML pages with scannable QR codes
+
+New documentation: [DPI Resistance](features/dpi-resistance.md) — covers server-side mitigations, recommended setup, and client-side bypass tools.
+
+!!! note "Client-side detection"
+    The primary detection vector for MTProxy fake-TLS in Russia is the **Telegram client's TLS fingerprint**, which cannot be fixed server-side. Telegram Desktop [fixed several fingerprint artifacts](https://github.com/telegramdesktop/tdesktop/pull/30513); keep clients updated. For affected networks, client-side bypass tools like [zapret](https://github.com/bol-van/zapret) and [GoodbyeDPI](https://github.com/ValdikSS/GoodbyeDPI) can help.
+
 ## 4.5.0
 
 QR codes for connection links.
