@@ -58,6 +58,7 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -261,10 +262,13 @@ int socks5_set_proxy (const char *url) {
   memcpy (host, p, hlen);
   host[hlen] = '\0';
 
-  socks5_config.addr = inet_addr (host);
-  if (socks5_config.addr == (in_addr_t) -1) {
-    return -1;  /* hostname not supported for SOCKS5 server itself */
+  struct addrinfo hints = {.ai_family = AF_INET, .ai_socktype = SOCK_STREAM};
+  struct addrinfo *ai;
+  if (getaddrinfo (host, NULL, &hints, &ai) != 0) {
+    return -1;
   }
+  socks5_config.addr = ((struct sockaddr_in *)ai->ai_addr)->sin_addr.s_addr;
+  freeaddrinfo (ai);
   socks5_config.port = port;
   socks5_config.enabled = 1;
 

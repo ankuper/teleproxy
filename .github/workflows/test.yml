@@ -295,7 +295,11 @@ jobs:
         # SOCKS5-proxied direct-mode proxy
         python3 ../tests/socks5_server.py --port 1080 2>socks5-server.log &
         echo "Started SOCKS5 server on port 1080"
-        sleep 1
+        for i in $(seq 1 10); do
+          nc -z 127.0.0.1 1080 2>/dev/null && break
+          sleep 0.5
+        done
+        nc -z 127.0.0.1 1080 || { echo "ERROR: SOCKS5 server not ready"; exit 1; }
 
         ./teleproxy -u nobody -p 10888 -H 10443 -S $SECRET \
           --http-stats --direct --socks5 socks5://127.0.0.1:1080 -M 0 2>socks5.log &
