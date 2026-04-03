@@ -10,7 +10,8 @@ hide:
 
 A high-performance MTProto proxy that makes Telegram traffic indistinguishable from regular HTTPS — defeating deep packet inspection while delivering lower latency than the original.
 
-[Get Started](getting-started/quickstart.md){ .md-button .md-button--primary }
+[One-Click Deploy](deploy/){ .md-button .md-button--primary }
+[Get Started](getting-started/quickstart.md){ .md-button }
 [Docker Quick Start](docker/index.md){ .md-button }
 
 :material-send: Follow **[@teleproxy_dev](https://t.me/teleproxy_dev)** on Telegram for updates.

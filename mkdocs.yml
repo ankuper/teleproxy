@@ -72,6 +72,7 @@ plugins:
             Diagnostics: Диагностика
             SOCKS5 Upstream Proxy: SOCKS5 прокси
             Deployment: Развёртывание
+            Cloud Deploy: Облачное развёртывание
             Systemd: Systemd
             IPv6: IPv6
             Testing: Тестирование
@@ -99,6 +100,7 @@ plugins:
             Diagnostics: تشخیص
             SOCKS5 Upstream Proxy: پروکسی SOCKS5
             Deployment: استقرار
+            Cloud Deploy: استقرار ابری
             Systemd: Systemd
             IPv6: IPv6
             Testing: تست
@@ -126,6 +128,7 @@ plugins:
             Diagnostics: Chẩn đoán
             SOCKS5 Upstream Proxy: Proxy SOCKS5
             Deployment: Triển khai
+            Cloud Deploy: Triển khai đám mây
             Systemd: Systemd
             IPv6: IPv6
             Testing: Kiểm thử
@@ -172,6 +175,7 @@ nav:
     - Connection Links: features/link.md
     - Diagnostics: features/diagnostics.md
   - Deployment:
+    - Cloud Deploy: https://teleproxy.github.io/deploy/
     - Systemd: deployment/systemd.md
     - IPv6: deployment/ipv6.md
   - Testing: testing.md
