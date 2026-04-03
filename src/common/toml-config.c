@@ -299,6 +299,9 @@ int toml_config_load (const char *path, struct toml_config *cfg,
   /* Misc */
   cfg->random_padding_only = get_optional_bool (top, "random_padding_only", -1);
 
+  /* SOCKS5 upstream proxy */
+  get_optional_string (top, "socks5", cfg->socks5, sizeof (cfg->socks5));
+
   /* Secrets */
   if (parse_secrets (top, cfg, errbuf, errlen) < 0) {
     toml_free (res);
@@ -351,6 +354,9 @@ int toml_config_reload (const char *path, struct toml_config *cfg) {
   }
   if (new_cfg.user[0] && cfg->user[0] && strcmp (new_cfg.user, cfg->user) != 0) {
     kprintf ("config reload: 'user' changed — restart required\n");
+  }
+  if (new_cfg.socks5[0] && cfg->socks5[0] && strcmp (new_cfg.socks5, cfg->socks5) != 0) {
+    kprintf ("config reload: 'socks5' changed — restart required\n");
   }
 
   /* Apply reloadable fields */

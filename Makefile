@@ -300,6 +300,15 @@ test-bind-address:
 		docker compose -f tests/docker-compose.bind-address-test.yml down; exit 1)
 	docker compose -f tests/docker-compose.bind-address-test.yml down
 
+test-socks5:
+	@export TELEPROXY_SECRET=$$(head -c 16 /dev/urandom | xxd -ps) && \
+	echo "Using secret: $$TELEPROXY_SECRET" && \
+	timeout 300s docker compose -f tests/docker-compose.socks5-test.yml up --build --exit-code-from tester || \
+		(echo "SOCKS5 test timed out or failed"; \
+		docker compose -f tests/docker-compose.socks5-test.yml logs teleproxy socks5; \
+		docker compose -f tests/docker-compose.socks5-test.yml down; exit 1)
+	docker compose -f tests/docker-compose.socks5-test.yml down
+
 test-generate-secret: docker-image-amd64
 	@echo "Testing generate-secret subcommand..."
 	@$(DOCKER) run --rm --platform $(DOCKER_PLATFORM) --entrypoint /bin/sh $(DOCKER_TEST_IMAGE) -c ' \

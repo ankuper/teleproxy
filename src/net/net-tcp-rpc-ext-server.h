@@ -45,3 +45,9 @@ int tcp_rpcs_reload_ext_secrets (const unsigned char secrets[][16],
 void tcp_rpc_add_proxy_domain (const char *domain);
 
 void tcp_rpc_init_proxy_domains();
+
+/* SOCKS5 upstream proxy */
+int socks5_set_proxy (const char *url);
+int socks5_is_enabled (void);
+
+extern long long socks5_connects_attempted, socks5_connects_succeeded, socks5_connects_failed;

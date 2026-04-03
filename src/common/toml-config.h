@@ -65,6 +65,9 @@ struct toml_config {
 
   /* Misc (not reloadable) */
   int random_padding_only; /* -R; -1 = not set */
+
+  /* SOCKS5 upstream proxy (not reloadable) */
+  char socks5[256];        /* socks5://[user:pass@]host:port; empty = not set */
 };
 
 /*

@@ -418,6 +418,7 @@ struct worker_stats {
   long long direct_dc_connections_created, direct_dc_connections_active;
   long long direct_dc_connections_failed, direct_dc_connections_dc_closed;
   long long direct_dc_retries;
+  long long socks5_connects_attempted, socks5_connects_succeeded, socks5_connects_failed;
 
   long long connections_failed_lru, connections_failed_flood;
 
@@ -492,6 +493,9 @@ static void update_local_stats_copy (struct worker_stats *S) {
   UPD (direct_dc_connections_failed);
   UPD (direct_dc_connections_dc_closed);
   UPD (direct_dc_retries);
+  UPD (socks5_connects_attempted);
+  UPD (socks5_connects_succeeded);
+  UPD (socks5_connects_failed);
   UPD (connections_failed_lru);
   UPD (connections_failed_flood);
   UPD (ext_connections);
@@ -582,6 +586,9 @@ static inline void add_stats (struct worker_stats *W) {
   UPD (direct_dc_connections_failed);
   UPD (direct_dc_connections_dc_closed);
   UPD (direct_dc_retries);
+  UPD (socks5_connects_attempted);
+  UPD (socks5_connects_succeeded);
+  UPD (socks5_connects_failed);
   UPD (connections_failed_lru);
   UPD (connections_failed_flood);
   UPD (ext_connections);
@@ -724,6 +731,10 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
 	     "direct_dc_connections_failed\t%lld\n"
 	     "direct_dc_connections_dc_closed\t%lld\n"
 	     "direct_dc_retries\t%lld\n"
+	     "socks5_enabled\t%d\n"
+	     "socks5_connects_attempted\t%lld\n"
+	     "socks5_connects_succeeded\t%lld\n"
+	     "socks5_connects_failed\t%lld\n"
 	     "drs_delays_enabled\t%d\n"
 	     "drs_delays_applied\t%lld\n"
 	     "drs_delays_skipped\t%lld\n"
@@ -804,6 +815,10 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
 	     S(direct_dc_connections_failed),
 	     S(direct_dc_connections_dc_closed),
 	     S(direct_dc_retries),
+	     socks5_is_enabled (),
+	     S(socks5_connects_attempted),
+	     S(socks5_connects_succeeded),
+	     S(socks5_connects_failed),
 	     drs_delays_enabled,
 	     S(drs_delays_applied),
 	     S(drs_delays_skipped),
@@ -914,6 +929,15 @@ void mtfront_prepare_prometheus_stats (stats_buffer_t *sb) {
 	     "# HELP teleproxy_direct_dc_retries_total DC connection retry attempts.\n"
 	     "# TYPE teleproxy_direct_dc_retries_total counter\n"
 	     "teleproxy_direct_dc_retries_total %lld\n"
+	     "# HELP teleproxy_socks5_connects_attempted_total SOCKS5 upstream connect attempts.\n"
+	     "# TYPE teleproxy_socks5_connects_attempted_total counter\n"
+	     "teleproxy_socks5_connects_attempted_total %lld\n"
+	     "# HELP teleproxy_socks5_connects_succeeded_total SOCKS5 upstream connects succeeded.\n"
+	     "# TYPE teleproxy_socks5_connects_succeeded_total counter\n"
+	     "teleproxy_socks5_connects_succeeded_total %lld\n"
+	     "# HELP teleproxy_socks5_connects_failed_total SOCKS5 upstream connects failed.\n"
+	     "# TYPE teleproxy_socks5_connects_failed_total counter\n"
+	     "teleproxy_socks5_connects_failed_total %lld\n"
 	     "# HELP teleproxy_drs_delays_total Total inter-record delays injected.\n"
 	     "# TYPE teleproxy_drs_delays_total counter\n"
 	     "teleproxy_drs_delays_total %lld\n"
@@ -954,6 +978,9 @@ void mtfront_prepare_prometheus_stats (stats_buffer_t *sb) {
 	     S(direct_dc_connections_failed),
 	     S(direct_dc_connections_dc_closed),
 	     S(direct_dc_retries),
+	     S(socks5_connects_attempted),
+	     S(socks5_connects_succeeded),
+	     S(socks5_connects_failed),
 	     S(drs_delays_applied),
 	     S(drs_delays_skipped),
 	     drs_delay_get_k (),
@@ -2925,6 +2952,13 @@ int f_parse_option (int val) {
   case 2006:
     toml_config_path = strdup (optarg);
     break;
+  case 2007:
+    if (socks5_set_proxy (optarg) < 0) {
+      kprintf ("invalid SOCKS5 URL: %s\n", optarg);
+      kprintf ("expected: socks5://[user:pass@]host:port\n");
+      usage ();
+    }
+    break;
   default:
     return -1;
   }
@@ -2949,6 +2983,7 @@ void mtfront_prepare_parse_options (void) {
   parse_option ("stats-allow-net", required_argument, 0, 2004, "CIDR range to allow stats access from, e.g. 100.64.0.0/10 (repeatable)");
   parse_option ("dc-override", required_argument, 0, 2005, "override DC address: dc_id:host:port or dc_id:[ipv6]:port (repeatable, direct mode)");
   parse_option ("config", required_argument, 0, 2006, "path to TOML config file (reloaded on SIGHUP for secrets/ACLs)");
+  parse_option ("socks5", required_argument, 0, 2007, "route upstream DC connections through SOCKS5 proxy (socks5://[user:pass@]host:port)");
 }
 
 void mtfront_parse_extra_args (int argc, char *argv[]) /* {{{ */ {
@@ -3035,6 +3070,12 @@ void mtfront_pre_init (void) {
         exit (1);
       }
     }
+    if (toml_cfg.socks5[0] && !socks5_is_enabled ()) {
+      if (socks5_set_proxy (toml_cfg.socks5) < 0) {
+        kprintf ("config error: invalid socks5 URL '%s'\n", toml_cfg.socks5);
+        exit (1);
+      }
+    }
     if (toml_cfg.ipv6 == 1) {
       engine_enable_ipv6 ();
     }
@@ -3052,6 +3093,11 @@ void mtfront_pre_init (void) {
 
   if (direct_mode && proxy_tag_set) {
     kprintf ("--direct and -P (proxy tag) are mutually exclusive\n");
+    exit (2);
+  }
+
+  if (socks5_is_enabled () && !direct_mode) {
+    kprintf ("--socks5 requires --direct mode\n");
     exit (2);
   }
 

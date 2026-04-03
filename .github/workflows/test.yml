@@ -90,6 +90,9 @@ jobs:
     - name: Run Stats Port Healthcheck Test
       run: make test-stats-port
 
+    - name: Run SOCKS5 Upstream Proxy Tests
+      run: make test-socks5
+
     - name: Test install.sh config generation
       run: make test-install-config
 
@@ -289,8 +292,17 @@ jobs:
           --http-stats --direct -D ya.ru -M 0 2>faketls.log &
         echo "Started fake-TLS direct-mode proxy on port 9443"
 
-        # Wait for both proxies to be ready
-        for port in 8888 9888; do
+        # SOCKS5-proxied direct-mode proxy
+        python3 ../tests/socks5_server.py --port 1080 2>socks5-server.log &
+        echo "Started SOCKS5 server on port 1080"
+        sleep 1
+
+        ./teleproxy -u nobody -p 10888 -H 10443 -S $SECRET \
+          --http-stats --direct --socks5 socks5://127.0.0.1:1080 -M 0 2>socks5.log &
+        echo "Started SOCKS5-proxied proxy on port 10443"
+
+        # Wait for all proxies to be ready
+        for port in 8888 9888 10888; do
           for i in $(seq 1 30); do
             curl -sf http://localhost:$port/stats >/dev/null 2>&1 && break
             sleep 2
@@ -300,7 +312,7 @@ jobs:
             exit 1
           }
         done
-        echo "Both proxies are ready"
+        echo "All proxies are ready"
 
     - name: Run Direct Mode E2E Tests
       env:
@@ -311,6 +323,8 @@ jobs:
         DIRECT_HOST=localhost \
         DIRECT_OBFS2_PORT=8443 \
         DIRECT_TLS_PORT=9443 \
+        DIRECT_SOCKS5_PORT=10443 \
+        DIRECT_SOCKS5_STATS_PORT=10888 \
         TELEPROXY_SECRET=$TELEPROXY_SECRET \
         EE_DOMAIN=ya.ru \
         python3 tests/test_direct_e2e.py
@@ -320,6 +334,12 @@ jobs:
       run: |
         echo "=== Obfs2 proxy log ==="
         cat teleproxy-run/obfs2.log 2>/dev/null || echo "(no log)"
+        echo ""
+        echo "=== SOCKS5 proxy log ==="
+        cat teleproxy-run/socks5.log 2>/dev/null || echo "(no log)"
+        echo ""
+        echo "=== SOCKS5 server log ==="
+        cat teleproxy-run/socks5-server.log 2>/dev/null || echo "(no log)"
         echo ""
         echo "=== Fake-TLS proxy log ==="
         cat teleproxy-run/faketls.log 2>/dev/null || echo "(no log)"

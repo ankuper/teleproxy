@@ -184,9 +184,101 @@ extern long long quickack_packets_received;
 #define DIRECT_MAX_RETRIES 3
 #define DIRECT_RETRY_BASE_SEC 0.2  /* 200ms, 400ms, 800ms */
 
+/* ── SOCKS5 upstream proxy ────────────────────────────────────── */
+
+enum {
+  SOCKS5_NONE = 0,             /* no SOCKS5 or handshake complete */
+  SOCKS5_GREETING_SENT,        /* awaiting method selection */
+  SOCKS5_AUTH_SENT,            /* awaiting auth response */
+  SOCKS5_CONNECT_SENT,         /* awaiting CONNECT response */
+};
+
+static struct {
+  int enabled;
+  int resolve_remote;          /* socks5h:// — send ATYP_DOMAIN in CONNECT */
+  in_addr_t addr;
+  int port;
+  char user[256];
+  char pass[256];
+} socks5_config;
+
+long long socks5_connects_attempted, socks5_connects_succeeded, socks5_connects_failed;
+
+int socks5_is_enabled (void) {
+  return socks5_config.enabled;
+}
+
+/* Parse socks5://[user:pass@]host:port or socks5h://... */
+int socks5_set_proxy (const char *url) {
+  memset (&socks5_config, 0, sizeof (socks5_config));
+
+  const char *p = url;
+  if (strncmp (p, "socks5h://", 10) == 0) {
+    socks5_config.resolve_remote = 1;
+    p += 10;
+  } else if (strncmp (p, "socks5://", 9) == 0) {
+    p += 9;
+  } else {
+    return -1;
+  }
+
+  /* Check for user:pass@ */
+  const char *at = strchr (p, '@');
+  if (at) {
+    const char *colon = memchr (p, ':', at - p);
+    if (!colon || colon == p) {
+      return -1;  /* missing username */
+    }
+    int ulen = colon - p;
+    int plen = at - colon - 1;
+    if (ulen <= 0 || ulen > 255 || plen < 0 || plen > 255) {
+      return -1;
+    }
+    memcpy (socks5_config.user, p, ulen);
+    socks5_config.user[ulen] = '\0';
+    if (plen > 0) {
+      memcpy (socks5_config.pass, colon + 1, plen);
+    }
+    socks5_config.pass[plen] = '\0';
+    p = at + 1;
+  }
+
+  /* Parse host:port */
+  const char *colon = strrchr (p, ':');
+  if (!colon || colon == p) {
+    return -1;
+  }
+  int port = atoi (colon + 1);
+  if (port <= 0 || port > 65535) {
+    return -1;
+  }
+
+  char host[256];
+  int hlen = colon - p;
+  if (hlen <= 0 || hlen >= (int)sizeof (host)) {
+    return -1;
+  }
+  memcpy (host, p, hlen);
+  host[hlen] = '\0';
+
+  socks5_config.addr = inet_addr (host);
+  if (socks5_config.addr == (in_addr_t) -1) {
+    return -1;  /* hostname not supported for SOCKS5 server itself */
+  }
+  socks5_config.port = port;
+  socks5_config.enabled = 1;
+
+  vkprintf (0, "SOCKS5 upstream proxy: %s:%d%s%s\n", host, port,
+            socks5_config.user[0] ? " (auth)" : "",
+            socks5_config.resolve_remote ? " (resolve remote)" : "");
+  return 0;
+}
+
 static int tcp_direct_client_parse_execute (connection_job_t C);
 static int tcp_direct_dc_parse_execute (connection_job_t C);
 static int tcp_direct_dc_connected (connection_job_t C);
+static void tcp_direct_dc_send_obfs2_init (connection_job_t C);
+static int socks5_handle_response (connection_job_t C);
 static int tcp_direct_close (connection_job_t C, int who);
 static int tcp_direct_client_alarm (connection_job_t C);
 
@@ -288,6 +380,23 @@ static int tcp_direct_client_parse_execute (connection_job_t C) {
 
 static int tcp_direct_dc_parse_execute (connection_job_t C) {
   struct connection_info *c = CONN_INFO(C);
+  struct tcp_rpc_data *D = TCP_RPC_DATA(C);
+
+  /* SOCKS5 handshake in progress — handle before any relay logic */
+  if (D->extra_int > 0) {
+    int res = socks5_handle_response (C);
+    if (res > 0) {
+      return NEED_MORE_BYTES;
+    }
+    if (res < 0) {
+      socks5_connects_failed++;
+      fail_connection (C, -1);
+      return 0;
+    }
+    /* res == 0: handshake complete, send obfs2 init */
+    tcp_direct_dc_send_obfs2_init (C);
+    return 0;
+  }
 
   /* Detect transport error codes from DC: a single 4-byte negative int
      (e.g. -404 "auth key not found", -429 "flood", -444 "invalid DC") */
@@ -370,14 +479,15 @@ static int tcp_direct_client_alarm (connection_job_t C) {
   return 0;
 }
 
-/* Called when the outbound TCP connection to the DC is established.
-   Generates and sends the obfuscated2 init payload. */
-static int tcp_direct_dc_connected (connection_job_t C) {
+/* Send obfuscated2 init payload to a DC and set up AES-CTR crypto.
+   Called either directly from tcp_direct_dc_connected() (no SOCKS5)
+   or after the SOCKS5 handshake completes (SOCKS5 mode). */
+static void tcp_direct_dc_send_obfs2_init (connection_job_t C) {
   struct connection_info *c = CONN_INFO(C);
   struct tcp_rpc_data *D = TCP_RPC_DATA(C);
   int target_dc = D->extra_int4;
 
-  vkprintf (1, "direct DC connection established (fd=%d), target DC=%d, sending obfuscated2 init\n", c->fd, target_dc);
+  vkprintf (1, "direct DC: sending obfuscated2 init (fd=%d, DC=%d)\n", c->fd, target_dc);
 
   /* Generate 64-byte obfuscated2 init payload */
   unsigned char init[64];
@@ -452,7 +562,183 @@ static int tcp_direct_dc_connected (connection_job_t C) {
     CONN_INFO((connection_job_t) c->extra)->skip_bytes = 0;
     job_signal (JOB_REF_CREATE_PASS (c->extra), JS_RUN);
   }
+}
 
+/* ── SOCKS5 handshake helpers ───────────────────────────────── */
+
+static void socks5_send_greeting (connection_job_t C) {
+  struct connection_info *c = CONN_INFO(C);
+  if (socks5_config.user[0]) {
+    unsigned char buf[] = {0x05, 0x02, 0x00, 0x02};  /* no-auth + user/pass */
+    rwm_push_data (&c->out_p, buf, 4);
+  } else {
+    unsigned char buf[] = {0x05, 0x01, 0x00};  /* no-auth only */
+    rwm_push_data (&c->out_p, buf, 3);
+  }
+}
+
+static void socks5_send_auth (connection_job_t C) {
+  struct connection_info *c = CONN_INFO(C);
+  int ulen = strlen (socks5_config.user);
+  int plen = strlen (socks5_config.pass);
+  unsigned char buf[515];  /* 1 + 1 + 255 + 1 + 255 */
+  buf[0] = 0x01;           /* auth version */
+  buf[1] = (unsigned char) ulen;
+  memcpy (buf + 2, socks5_config.user, ulen);
+  buf[2 + ulen] = (unsigned char) plen;
+  memcpy (buf + 3 + ulen, socks5_config.pass, plen);
+  rwm_push_data (&c->out_p, buf, 3 + ulen + plen);
+}
+
+static void socks5_send_connect (connection_job_t C) {
+  struct connection_info *c = CONN_INFO(C);
+  struct tcp_rpc_data *D = TCP_RPC_DATA(C);
+  int dc_id = D->extra_int4;
+  int addr_idx = D->extra_int2;
+
+  const struct dc_entry *dc = direct_dc_lookup (dc_id);
+  assert (dc && addr_idx < dc->addr_count);
+  const struct dc_addr *addr = &dc->addrs[addr_idx];
+
+  static const unsigned char zero_ipv6[16] = {};
+  int has_ipv6 = memcmp (addr->ipv6, zero_ipv6, 16) != 0;
+  int use_ipv6 = ipv6_enabled && has_ipv6;
+
+  unsigned char buf[22];  /* max: 4 header + 16 ipv6 + 2 port */
+  buf[0] = 0x05;          /* SOCKS version */
+  buf[1] = 0x01;          /* CONNECT */
+  buf[2] = 0x00;          /* reserved */
+  int len;
+  if (use_ipv6) {
+    buf[3] = 0x04;         /* ATYP: IPv6 */
+    memcpy (buf + 4, addr->ipv6, 16);
+    buf[20] = (addr->port >> 8) & 0xff;
+    buf[21] = addr->port & 0xff;
+    len = 22;
+  } else {
+    buf[3] = 0x01;         /* ATYP: IPv4 */
+    memcpy (buf + 4, &addr->ipv4, 4);
+    buf[8] = (addr->port >> 8) & 0xff;
+    buf[9] = addr->port & 0xff;
+    len = 10;
+  }
+  rwm_push_data (&c->out_p, buf, len);
+}
+
+/* Process SOCKS5 handshake responses.  Returns:
+   1  = handshake still in progress (NEED_MORE_BYTES)
+   0  = handshake complete — caller should proceed with obfs2 init
+   -1 = error — connection should be failed */
+static int socks5_handle_response (connection_job_t C) {
+  struct connection_info *c = CONN_INFO(C);
+  struct tcp_rpc_data *D = TCP_RPC_DATA(C);
+  int state = D->extra_int;
+
+  if (state == SOCKS5_GREETING_SENT) {
+    if (c->in.total_bytes < 2) {
+      return 1;
+    }
+    unsigned char resp[2];
+    assert (rwm_fetch_data (&c->in, resp, 2) == 2);
+    if (resp[0] != 0x05) {
+      vkprintf (0, "socks5: bad version %d in greeting response\n", resp[0]);
+      return -1;
+    }
+    if (resp[1] == 0x00) {
+      /* No auth — send CONNECT directly */
+      socks5_send_connect (C);
+      D->extra_int = SOCKS5_CONNECT_SENT;
+      return 1;
+    } else if (resp[1] == 0x02) {
+      /* Username/password auth */
+      if (!socks5_config.user[0]) {
+        vkprintf (0, "socks5: server requires auth but no credentials configured\n");
+        return -1;
+      }
+      socks5_send_auth (C);
+      D->extra_int = SOCKS5_AUTH_SENT;
+      return 1;
+    } else {
+      vkprintf (0, "socks5: no acceptable auth method (server chose 0x%02x)\n", resp[1]);
+      return -1;
+    }
+  }
+
+  if (state == SOCKS5_AUTH_SENT) {
+    if (c->in.total_bytes < 2) {
+      return 1;
+    }
+    unsigned char resp[2];
+    assert (rwm_fetch_data (&c->in, resp, 2) == 2);
+    if (resp[1] != 0x00) {
+      vkprintf (0, "socks5: auth failed (status 0x%02x)\n", resp[1]);
+      return -1;
+    }
+    socks5_send_connect (C);
+    D->extra_int = SOCKS5_CONNECT_SENT;
+    return 1;
+  }
+
+  if (state == SOCKS5_CONNECT_SENT) {
+    /* Minimum CONNECT response: ver(1) + rep(1) + rsv(1) + atyp(1) + addr + port(2).
+       Peek at first 5 bytes to determine total length. */
+    if (c->in.total_bytes < 5) {
+      return 1;
+    }
+    unsigned char peek[5];
+    assert (rwm_fetch_lookup (&c->in, peek, 5) == 5);
+
+    int addr_len;
+    if (peek[3] == 0x01) {
+      addr_len = 4;   /* IPv4 */
+    } else if (peek[3] == 0x04) {
+      addr_len = 16;  /* IPv6 */
+    } else if (peek[3] == 0x03) {
+      addr_len = 1 + peek[4];  /* length byte + domain */
+    } else {
+      vkprintf (0, "socks5: unknown address type 0x%02x in CONNECT response\n", peek[3]);
+      return -1;
+    }
+
+    int total = 4 + addr_len + 2;
+    if (c->in.total_bytes < total) {
+      return 1;
+    }
+
+    /* Consume the full response */
+    unsigned char discard[280];
+    assert (rwm_fetch_data (&c->in, discard, total) == total);
+
+    if (peek[1] != 0x00) {
+      vkprintf (0, "socks5: CONNECT failed (reply 0x%02x)\n", peek[1]);
+      return -1;
+    }
+
+    D->extra_int = SOCKS5_NONE;
+    socks5_connects_succeeded++;
+    vkprintf (1, "socks5: CONNECT succeeded (fd=%d)\n", c->fd);
+    return 0;  /* handshake complete */
+  }
+
+  return -1;  /* unknown state */
+}
+
+/* Called when the outbound TCP connection is established.
+   If SOCKS5 is enabled, starts the SOCKS5 handshake; otherwise
+   sends the obfuscated2 init directly. */
+static int tcp_direct_dc_connected (connection_job_t C) {
+  struct connection_info *c = CONN_INFO(C);
+  struct tcp_rpc_data *D = TCP_RPC_DATA(C);
+
+  if (socks5_config.enabled) {
+    vkprintf (1, "direct DC: connected to SOCKS5 proxy (fd=%d), starting handshake for DC=%d\n", c->fd, D->extra_int4);
+    socks5_connects_attempted++;
+    socks5_send_greeting (C);
+    D->extra_int = SOCKS5_GREETING_SENT;
+    return 0;
+  }
+
+  tcp_direct_dc_send_obfs2_init (C);
   return 0;
 }
 
@@ -469,18 +755,23 @@ static job_t direct_try_dc_addrs (connection_job_t C, const struct dc_entry *dc,
     if (use_ipv6) {
       char addr_buf[INET6_ADDRSTRLEN];
       inet_ntop (AF_INET6, addr->ipv6, addr_buf, sizeof (addr_buf));
-      vkprintf (1, "direct mode: trying DC %d addr %d/%d ([%s]:%d) via IPv6\n",
-                target_dc, i + 1, dc->addr_count, addr_buf, addr->port);
+      vkprintf (1, "direct mode: trying DC %d addr %d/%d ([%s]:%d)%s\n",
+                target_dc, i + 1, dc->addr_count, addr_buf, addr->port,
+                socks5_config.enabled ? " via SOCKS5" : " via IPv6");
     } else if (addr->ipv4) {
-      vkprintf (1, "direct mode: trying DC %d addr %d/%d (%s:%d)\n",
+      vkprintf (1, "direct mode: trying DC %d addr %d/%d (%s:%d)%s\n",
                 target_dc, i + 1, dc->addr_count,
-                inet_ntoa (*(struct in_addr *)&addr->ipv4), addr->port);
+                inet_ntoa (*(struct in_addr *)&addr->ipv4), addr->port,
+                socks5_config.enabled ? " via SOCKS5" : "");
     } else {
       continue;  /* no usable address */
     }
 
     int cfd;
-    if (use_ipv6) {
+    if (socks5_config.enabled) {
+      /* Connect to SOCKS5 proxy instead of DC directly */
+      cfd = client_socket (socks5_config.addr, socks5_config.port, 0);
+    } else if (use_ipv6) {
       cfd = client_socket_ipv6 (addr->ipv6, addr->port, SM_IPV6);
     } else {
       cfd = client_socket (addr->ipv4, addr->port, 0);
@@ -493,7 +784,12 @@ static job_t direct_try_dc_addrs (connection_job_t C, const struct dc_entry *dc,
 
     job_incref (C);
     job_t EJ;
-    if (use_ipv6) {
+    if (socks5_config.enabled) {
+      /* alloc_new_connection records the SOCKS5 server as the remote addr,
+         which is fine — the DC addr is looked up from extra_int4 + extra_int2 */
+      EJ = alloc_new_connection (cfd, NULL, NULL, ct_outbound, &ct_direct_dc, C,
+                                  ntohl (socks5_config.addr), NULL, socks5_config.port);
+    } else if (use_ipv6) {
       EJ = alloc_new_connection (cfd, NULL, NULL, ct_outbound, &ct_direct_dc, C,
                                   0, (unsigned char *)addr->ipv6, addr->port);
     } else {
@@ -505,6 +801,10 @@ static job_t direct_try_dc_addrs (connection_job_t C, const struct dc_entry *dc,
                 target_dc, i + 1, dc->addr_count);
       job_decref_f (C);
       continue;
+    }
+    if (socks5_config.enabled) {
+      /* Store DC address index for the SOCKS5 CONNECT request */
+      TCP_RPC_DATA(EJ)->extra_int2 = i;
     }
     return EJ;
   }
