@@ -90,6 +90,9 @@ jobs:
     - name: Run Stats Port Healthcheck Test
       run: make test-stats-port
 
+    - name: Run Link IP Test
+      run: make test-link-ip
+
     - name: Run SOCKS5 Upstream Proxy Tests
       run: make test-socks5
 

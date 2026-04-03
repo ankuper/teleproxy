@@ -2525,6 +2525,11 @@ static void sb_qr_svg (stats_buffer_t *sb, const char *url) {
   sb_printf (sb, "</svg>");
 }
 
+static void format_ipv4 (char *buf, int bufsz, unsigned ip) {
+  snprintf (buf, bufsz, "%u.%u.%u.%u",
+            ip >> 24, (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF);
+}
+
 static void mtfront_prepare_link_page (stats_buffer_t *sb,
                                        const char *host, int host_len) {
   char server[256];
@@ -2535,7 +2540,7 @@ static void mtfront_prepare_link_page (stats_buffer_t *sb,
   memcpy (server, host, slen);
   server[slen] = '\0';
 
-  /* Strip port suffix (e.g., "1.2.3.4:8888" → "1.2.3.4") */
+  /* Strip port suffix (e.g., "1.2.3.4:8888" -> "1.2.3.4") */
   char *colon = strrchr (server, ':');
   if (colon && strchr (server, '.')) {
     *colon = '\0';
@@ -2546,6 +2551,21 @@ static void mtfront_prepare_link_page (stats_buffer_t *sb,
     if (bracket) {
       *bracket = '\0';
       memmove (server, server + 1, strlen (server + 1) + 1);
+    }
+  }
+
+  /* Fix unreachable Host values: loopback and Docker-internal IPs */
+  if (!strcmp (server, "localhost")) {
+    format_ipv4 (server, sizeof (server), get_external_ipv4 ());
+  } else {
+    unsigned ip = parse_text_ipv4 (server);
+    if (ip) {
+      unsigned translated = nat_translate_ip (ip);
+      if (translated != ip) {
+        format_ipv4 (server, sizeof (server), translated);
+      } else if ((ip >> 24) == 127) {
+        format_ipv4 (server, sizeof (server), get_external_ipv4 ());
+      }
     }
   }
 

@@ -447,5 +447,6 @@ extern unsigned nat_info[MAX_NAT_INFO_RULES][2];
 
 int net_add_nat_info (char *str);
 unsigned nat_translate_ip (unsigned local_ip);
+unsigned get_external_ipv4 (void);
 
 connection_job_t alloc_new_connection (int cfd, conn_target_job_t CTJ, listening_connection_job_t LCJ, int basic_type, conn_type_t *conn_type, void *conn_extra, unsigned peer, unsigned char peer_ipv6[16], int peer_port);

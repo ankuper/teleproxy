@@ -2189,6 +2189,13 @@ int net_add_nat_info (char *str) {
   return nat_info_rules++;
 }
 
+unsigned get_external_ipv4 (void) {
+  if (nat_info_rules > 0) {
+    return nat_info[0][1];
+  }
+  return get_my_ipv4 ();
+}
+
 unsigned nat_translate_ip (unsigned local_ip) {
   int i;
   vkprintf (6, "nat_info: %d rules\n", nat_info_rules);
