@@ -207,6 +207,10 @@ TOML_CONFIG="data/config.toml"
         echo "socks5 = \"$SOCKS5_PROXY\""
     fi
 
+    if [ "$PROXY_PROTOCOL" = "true" ]; then
+        echo "proxy_protocol = true"
+    fi
+
     if [ -n "$DC_OVERRIDE" ]; then
         _save_ifs="$IFS"
         IFS=','

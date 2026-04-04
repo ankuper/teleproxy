@@ -51,7 +51,9 @@
 #include "net/net-tcp-drs.h"
 #include "net/net-tcp-rpc-ext-server.h"
 #include "net/net-obfs2-parse.h"
+#include "net/net-proxy-protocol.h"
 #include "net/net-tls-parse.h"
+#include "net/net-ip-acl.h"
 #include "net/net-thread.h"
 #include "mtproto/mtproto-dc-table.h"
 
@@ -1999,6 +2001,12 @@ static int proxy_connection (connection_job_t C, const struct domain_info *info)
 }
 
 int tcp_rpcs_ext_alarm (connection_job_t C) {
+  if (CONN_INFO(C)->flags & C_PROXY_PROTOCOL) {
+    proxy_protocol_errors_total++;
+    vkprintf (1, "PROXY protocol header timeout from %s\n", show_remote_ip (C));
+    fail_connection (C, -1);
+    return 0;
+  }
   struct tcp_rpc_data *D = TCP_RPC_DATA (C);
   if (D->in_packet_num == -3 && default_domain_info != NULL) {
     return proxy_connection (C, default_domain_info);
@@ -2019,6 +2027,14 @@ static int tcp_rpcs_ext_drs_alarm (connection_job_t C) {
     return 0;
   }
 
+  /* PROXY protocol header timeout */
+  if (c->flags & C_PROXY_PROTOCOL) {
+    proxy_protocol_errors_total++;
+    vkprintf (1, "PROXY protocol header timeout from %s\n", show_remote_ip (C));
+    fail_connection (C, -1);
+    return 0;
+  }
+
   /* Handshake timeout (pre-handshake state) */
   if (D->in_packet_num == -3 && default_domain_info != NULL) {
     return proxy_connection (C, default_domain_info);
@@ -2036,6 +2052,9 @@ static int tcp_rpcs_ext_drs_alarm (connection_job_t C) {
 }
 
 int tcp_rpcs_ext_init_accepted (connection_job_t C) {
+  if (proxy_protocol_enabled) {
+    CONN_INFO(C)->flags |= C_PROXY_PROTOCOL;
+  }
   job_timer_insert (C, precise_now + 10);
   return tcp_rpcs_init_accepted_nohs (C);
 }
@@ -2081,6 +2100,54 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
     assert (rwm_fetch_lookup (&c->in, &packet_len, 4) == 4);
 
     if (D->in_packet_num == -3) {
+      /* PROXY protocol: strip header before any protocol detection */
+      if (c->flags & C_PROXY_PROTOCOL) {
+        struct proxy_protocol_result pp;
+        int pp_ret = proxy_protocol_parse (&c->in, &pp);
+        if (pp_ret == 0) {
+          int need = 16 - c->in.total_bytes;
+          return need > 0 ? need : NEED_MORE_BYTES;
+        }
+        if (pp_ret < 0) {
+          proxy_protocol_errors_total++;
+          vkprintf (1, "PROXY protocol parse error from %s:%d\n", show_remote_ip (C), c->remote_port);
+          fail_connection (C, -1);
+          return 0;
+        }
+        c->flags &= ~C_PROXY_PROTOCOL;
+        proxy_protocol_connections_total++;
+        if (pp.family == AF_INET) {
+          c->remote_ip = pp.src_ip;
+          memset (c->remote_ipv6, 0, 16);
+          c->remote_port = pp.src_port;
+          c->flags &= ~C_IPV6;
+        } else if (pp.family == AF_INET6) {
+          c->remote_ip = 0;
+          memcpy (c->remote_ipv6, pp.src_ipv6, 16);
+          c->remote_port = pp.src_port;
+          c->flags |= C_IPV6;
+        }
+        /* family==0 (UNKNOWN/LOCAL): keep original IP */
+        if (pp.family) {
+          int acl_ok = c->remote_ip
+            ? ip_acl_check_v4 (c->remote_ip)
+            : ip_acl_check_v6 (c->remote_ipv6);
+          if (!acl_ok) {
+            vkprintf (1, "PROXY protocol: real client %s rejected by IP ACL\n", show_remote_ip (C));
+            fail_connection (C, -1);
+            return 0;
+          }
+        }
+        vkprintf (1, "PROXY protocol: real client %s:%d\n", show_remote_ip (C), c->remote_port);
+        len = c->in.total_bytes;
+        if (len <= 0) {
+          return NEED_MORE_BYTES;
+        }
+        if (len < min_len + 8) {
+          return min_len + 8 - len;
+        }
+        assert (rwm_fetch_lookup (&c->in, &packet_len, 4) == 4);
+      }
       vkprintf (1, "trying to determine type of connection from %s:%d\n", show_remote_ip (C), c->remote_port);
 #if __ALLOW_UNOBFS__
       if ((packet_len & 0xff) == 0xef) {

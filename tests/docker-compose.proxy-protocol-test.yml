@@ -1,0 +1,34 @@
+services:
+  teleproxy:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        DEBUG_TOOLS: "1"
+    environment:
+      - SECRET=${TELEPROXY_SECRET}
+      - PORT=8443
+      - STATS_PORT=8888
+      - WORKERS=0
+      - DIRECT_MODE=true
+      - PROXY_PROTOCOL=true
+      - IP_BLOCKLIST=/opt/teleproxy/blocklist.txt
+    volumes:
+      - ./proxy-protocol-blocklist.txt:/opt/teleproxy/blocklist.txt:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8888/stats || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+
+  tester:
+    build: .
+    environment:
+      - TELEPROXY_HOST=teleproxy
+      - TELEPROXY_PORT=8443
+      - TELEPROXY_STATS_PORT=8888
+    command: ["python", "test_proxy_protocol.py"]
+    depends_on:
+      teleproxy:
+        condition: service_healthy

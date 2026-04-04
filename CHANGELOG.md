@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+PROXY protocol v1/v2 listener support.
+
+- `--proxy-protocol` CLI flag / `proxy_protocol = true` TOML config / `PROXY_PROTOCOL=true` Docker env
+- Auto-detects v1 (text) and v2 (binary) headers, extracts real client IP from load balancer
+- IP ACLs re-checked against the real client IP after header parsing
+- v2 LOCAL command accepted for health check probes
+- New stats: `proxy_protocol_enabled`, `proxy_protocol_connections`, `proxy_protocol_errors`
+- Prometheus metrics: `teleproxy_proxy_protocol_connections_total`, `teleproxy_proxy_protocol_errors_total`
+
 ## [4.5.0]
 
 QR codes for connection links.

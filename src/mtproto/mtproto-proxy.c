@@ -58,6 +58,7 @@
 #include "net/net-tcp-rpc-server.h"
 #include "net/net-tcp-rpc-client.h"
 #include "net/net-tcp-rpc-ext-server.h"
+#include "net/net-proxy-protocol.h"
 #include "net/net-crypto-aes.h"
 #include "net/net-crypto-dh.h"
 #include "mtproto-check.h"
@@ -751,6 +752,9 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
 	     "socks5_connects_attempted\t%lld\n"
 	     "socks5_connects_succeeded\t%lld\n"
 	     "socks5_connects_failed\t%lld\n"
+	     "proxy_protocol_enabled\t%d\n"
+	     "proxy_protocol_connections\t%lld\n"
+	     "proxy_protocol_errors\t%lld\n"
 	     "drs_delays_enabled\t%d\n"
 	     "drs_delays_applied\t%lld\n"
 	     "drs_delays_skipped\t%lld\n"
@@ -835,6 +839,9 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
 	     S(socks5_connects_attempted),
 	     S(socks5_connects_succeeded),
 	     S(socks5_connects_failed),
+	     proxy_protocol_enabled,
+	     proxy_protocol_connections_total,
+	     proxy_protocol_errors_total,
 	     drs_delays_enabled,
 	     S(drs_delays_applied),
 	     S(drs_delays_skipped),
@@ -977,6 +984,15 @@ void mtfront_prepare_prometheus_stats (stats_buffer_t *sb) {
 	     "# HELP teleproxy_socks5_connects_failed_total SOCKS5 upstream connects failed.\n"
 	     "# TYPE teleproxy_socks5_connects_failed_total counter\n"
 	     "teleproxy_socks5_connects_failed_total %lld\n"
+	     "# HELP teleproxy_proxy_protocol_enabled Whether PROXY protocol is enabled.\n"
+	     "# TYPE teleproxy_proxy_protocol_enabled gauge\n"
+	     "teleproxy_proxy_protocol_enabled %d\n"
+	     "# HELP teleproxy_proxy_protocol_connections_total Connections with PROXY protocol header parsed.\n"
+	     "# TYPE teleproxy_proxy_protocol_connections_total counter\n"
+	     "teleproxy_proxy_protocol_connections_total %lld\n"
+	     "# HELP teleproxy_proxy_protocol_errors_total PROXY protocol parse failures.\n"
+	     "# TYPE teleproxy_proxy_protocol_errors_total counter\n"
+	     "teleproxy_proxy_protocol_errors_total %lld\n"
 	     "# HELP teleproxy_drs_delays_total Total inter-record delays injected.\n"
 	     "# TYPE teleproxy_drs_delays_total counter\n"
 	     "teleproxy_drs_delays_total %lld\n"
@@ -1020,6 +1036,9 @@ void mtfront_prepare_prometheus_stats (stats_buffer_t *sb) {
 	     S(socks5_connects_attempted),
 	     S(socks5_connects_succeeded),
 	     S(socks5_connects_failed),
+	     proxy_protocol_enabled,
+	     proxy_protocol_connections_total,
+	     proxy_protocol_errors_total,
 	     S(drs_delays_applied),
 	     S(drs_delays_skipped),
 	     drs_delay_get_k (),
@@ -3097,6 +3116,9 @@ int f_parse_option (int val) {
       usage ();
     }
     break;
+  case 2008:
+    proxy_protocol_enabled = 1;
+    break;
   default:
     return -1;
   }
@@ -3122,6 +3144,7 @@ void mtfront_prepare_parse_options (void) {
   parse_option ("dc-override", required_argument, 0, 2005, "override DC address: dc_id:host:port or dc_id:[ipv6]:port (repeatable, direct mode)");
   parse_option ("config", required_argument, 0, 2006, "path to TOML config file (reloaded on SIGHUP for secrets/ACLs)");
   parse_option ("socks5", required_argument, 0, 2007, "route upstream DC connections through SOCKS5 proxy (socks5://[user:pass@]host:port)");
+  parse_option ("proxy-protocol", no_argument, 0, 2008, "enable PROXY protocol v1/v2 on client listeners (for use behind HAProxy/nginx/NLB)");
 }
 
 void mtfront_parse_extra_args (int argc, char *argv[]) /* {{{ */ {
@@ -3213,6 +3236,9 @@ void mtfront_pre_init (void) {
         kprintf ("config error: invalid socks5 URL '%s'\n", toml_cfg.socks5);
         exit (1);
       }
+    }
+    if (toml_cfg.proxy_protocol == 1 && !proxy_protocol_enabled) {
+      proxy_protocol_enabled = 1;
     }
     if (toml_cfg.ipv6 == 1) {
       engine_enable_ipv6 ();

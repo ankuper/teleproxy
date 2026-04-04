@@ -99,6 +99,9 @@ jobs:
     - name: Run SOCKS5 Upstream Proxy Tests
       run: make test-socks5
 
+    - name: Run PROXY Protocol Tests
+      run: make test-proxy-protocol
+
     - name: Test install.sh config generation
       run: make test-install-config
 

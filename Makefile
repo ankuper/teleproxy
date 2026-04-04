@@ -79,7 +79,7 @@ DEPDIRS := ${DEP} $(addprefix ${DEP}/,${PROJECTS})
 ALLDIRS := ${DEPDIRS} ${OBJDIRS}
 
 
-.PHONY:	all clean lint tests test test-tls test-multi-secret test-secret-limit test-secret-quota test-ip-acl test-drs-delays test-cdn-dc test-ipv6-direct test-dc-lookup test-config-reload test-check test-link test-link-ip test-stats-port test-install-config docker-image-amd64 docker-run-help-amd64 docker-image-arm64 docker-run-help-arm64 fuzz fuzz-run
+.PHONY:	all clean lint tests test test-tls test-multi-secret test-secret-limit test-secret-quota test-ip-acl test-drs-delays test-cdn-dc test-ipv6-direct test-dc-lookup test-config-reload test-check test-link test-link-ip test-stats-port test-install-config test-proxy-protocol docker-image-amd64 docker-run-help-amd64 docker-image-arm64 docker-run-help-arm64 fuzz fuzz-run
 
 EXELIST	:= ${EXE}/teleproxy
 
@@ -106,7 +106,7 @@ LIB_OBJS_NORMAL := \
 	${OBJ}/src/net/net-connections.o \
 	${OBJ}/src/net/net-rpc-targets.o \
 	${OBJ}/src/net/net-tcp-connections.o ${OBJ}/src/net/net-tcp-drs.o ${OBJ}/src/net/net-tcp-rpc-common.o ${OBJ}/src/net/net-tcp-rpc-client.o ${OBJ}/src/net/net-tcp-rpc-server.o \
-	${OBJ}/src/net/net-http-server.o ${OBJ}/src/net/net-http-parse.o ${OBJ}/src/net/net-tls-parse.o ${OBJ}/src/net/net-obfs2-parse.o ${OBJ}/src/net/net-ip-acl.o \
+	${OBJ}/src/net/net-http-server.o ${OBJ}/src/net/net-http-parse.o ${OBJ}/src/net/net-tls-parse.o ${OBJ}/src/net/net-obfs2-parse.o ${OBJ}/src/net/net-ip-acl.o ${OBJ}/src/net/net-proxy-protocol.o \
 	${OBJ}/src/common/tl-parse.o ${OBJ}/src/common/common-stats.o \
 	${OBJ}/src/engine/engine.o ${OBJ}/src/engine/engine-signals.o \
 	${OBJ}/src/engine/engine-net.o \
@@ -318,6 +318,15 @@ test-socks5:
 		docker compose -f tests/docker-compose.socks5-test.yml logs teleproxy socks5; \
 		docker compose -f tests/docker-compose.socks5-test.yml down; exit 1)
 	docker compose -f tests/docker-compose.socks5-test.yml down
+
+test-proxy-protocol:
+	@export TELEPROXY_SECRET=$$(head -c 16 /dev/urandom | xxd -ps) && \
+	echo "Using secret: $$TELEPROXY_SECRET" && \
+	timeout 300s docker compose -f tests/docker-compose.proxy-protocol-test.yml up --build --exit-code-from tester || \
+		(echo "PROXY protocol test timed out or failed"; \
+		docker compose -f tests/docker-compose.proxy-protocol-test.yml logs teleproxy; \
+		docker compose -f tests/docker-compose.proxy-protocol-test.yml down; exit 1)
+	docker compose -f tests/docker-compose.proxy-protocol-test.yml down
 
 test-generate-secret: docker-image-amd64
 	@echo "Testing generate-secret subcommand..."
