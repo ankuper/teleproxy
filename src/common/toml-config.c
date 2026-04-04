@@ -178,6 +178,24 @@ static int parse_secrets (toml_datum_t toptab, struct toml_config *cfg,
       cfg->secrets[i].quota = qv;
     }
 
+    /* rate_limit (optional, default 0 = unlimited) — bytes/sec per IP */
+    cfg->secrets[i].rate_limit = 0;
+    toml_datum_t rate_limit = toml_get (entry, "rate_limit");
+    if (rate_limit.type == TOML_INT64) {
+      if (rate_limit.u.int64 < 0) {
+        snprintf (errbuf, errlen, "secret[%d]: rate_limit must be non-negative", i);
+        return -1;
+      }
+      cfg->secrets[i].rate_limit = rate_limit.u.int64;
+    } else if (rate_limit.type == TOML_STRING) {
+      long long rv = parse_byte_size (rate_limit.u.s, errbuf, errlen);
+      if (rv < 0) {
+        snprintf (errbuf, errlen, "secret[%d]: invalid rate_limit '%s'", i, rate_limit.u.s);
+        return -1;
+      }
+      cfg->secrets[i].rate_limit = rv;
+    }
+
     /* max_ips (optional, default 0 = unlimited) */
     cfg->secrets[i].max_ips = 0;
     toml_datum_t max_ips = toml_get (entry, "max_ips");

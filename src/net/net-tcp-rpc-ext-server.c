@@ -186,11 +186,16 @@ extern long long per_secret_rejected_quota[16];
 extern long long per_secret_rejected_ips[16];
 extern long long per_secret_rejected_expired[16];
 extern long long per_secret_unique_ips[16];
+extern long long per_secret_rate_limited[16];
 extern long long transport_errors_received;
 
 /* Forward declarations for enforcement functions defined after secret arrays */
 static int secret_over_quota (int secret_id);
 static void ip_track_disconnect_impl (int secret_id, unsigned ip, const unsigned char *ipv6);
+static void rate_limit_after_relay (connection_job_t C, int secret_id,
+                                    long long bytes, unsigned ip,
+                                    const unsigned char *ipv6);
+static int rate_limit_resume (connection_job_t C);
 extern long long quickack_packets_received;
 
 #define DIRECT_MAX_RETRIES 3
@@ -331,6 +336,12 @@ conn_type_t ct_direct_client_drs = {
   .crypto_needed_output_bytes = cpu_tcp_aes_crypto_ctr128_needed_output_bytes,
 };
 
+/* DC-side alarm handler: handles rate limit resume for DC→client throttling. */
+static int tcp_direct_dc_alarm (connection_job_t C) {
+  rate_limit_resume (C);
+  return 0;
+}
+
 /* DC-side relay: its own AES-CTR crypto for the proxy→DC obfuscated2 connection */
 conn_type_t ct_direct_dc = {
   .magic = CONN_FUNC_MAGIC,
@@ -341,6 +352,7 @@ conn_type_t ct_direct_dc = {
   .connected = tcp_direct_dc_connected,
   .close = tcp_direct_close,
   .write_packet = tcp_proxy_pass_write_packet,
+  .alarm = tcp_direct_dc_alarm,
   .crypto_init = aes_crypto_ctr128_init,
   .crypto_free = aes_crypto_free,
   .crypto_encrypt_output = cpu_tcp_aes_crypto_ctr128_encrypt_output,
@@ -387,8 +399,9 @@ static int tcp_direct_client_parse_execute (connection_job_t C) {
     return NEED_MORE_BYTES;
   }
   int sid = TCP_RPC_DATA(C)->extra_int2;
-  if (sid > 0 && sid <= 16 && c->in.total_bytes > 0) {
-    per_secret_bytes_received[sid - 1] += c->in.total_bytes;
+  long long relay_bytes = c->in.total_bytes;
+  if (sid > 0 && sid <= 16 && relay_bytes > 0) {
+    per_secret_bytes_received[sid - 1] += relay_bytes;
     if (secret_over_quota (sid - 1)) {
       per_secret_rejected_quota[sid - 1]++;
       vkprintf (1, "direct client: secret #%d quota exhausted, closing from %s:%d\n", sid - 1, show_remote_ip (C), c->remote_port);
@@ -396,7 +409,11 @@ static int tcp_direct_client_parse_execute (connection_job_t C) {
       return 0;
     }
   }
-  return tcp_direct_relay (C);
+  int res = tcp_direct_relay (C);
+  if (sid > 0 && sid <= 16 && relay_bytes > 0) {
+    rate_limit_after_relay (C, sid - 1, relay_bytes, c->remote_ip, c->remote_ipv6);
+  }
+  return res;
 }
 
 static int tcp_direct_dc_parse_execute (connection_job_t C) {
@@ -430,19 +447,32 @@ static int tcp_direct_dc_parse_execute (connection_job_t C) {
     }
   }
 
+  int rl_sid = 0;
+  long long relay_bytes = 0;
+  unsigned rl_ip = 0;
+  const unsigned char *rl_ipv6 = NULL;
   if (c->extra && c->in.total_bytes > 0) {
-    int sid = TCP_RPC_DATA((connection_job_t) c->extra)->extra_int2;
+    connection_job_t client = (connection_job_t) c->extra;
+    int sid = TCP_RPC_DATA(client)->extra_int2;
     if (sid > 0 && sid <= 16) {
-      per_secret_bytes_sent[sid - 1] += c->in.total_bytes;
+      relay_bytes = c->in.total_bytes;
+      per_secret_bytes_sent[sid - 1] += relay_bytes;
       if (secret_over_quota (sid - 1)) {
         per_secret_rejected_quota[sid - 1]++;
         vkprintf (1, "direct DC: secret #%d quota exhausted, closing\n", sid - 1);
         fail_connection (C, -1);
         return 0;
       }
+      rl_sid = sid;
+      rl_ip = CONN_INFO(client)->remote_ip;
+      rl_ipv6 = CONN_INFO(client)->remote_ipv6;
     }
   }
-  return tcp_direct_relay (C);
+  int res = tcp_direct_relay (C);
+  if (rl_sid > 0 && relay_bytes > 0) {
+    rate_limit_after_relay (C, rl_sid - 1, relay_bytes, rl_ip, rl_ipv6);
+  }
+  return res;
 }
 
 static int direct_schedule_retry (connection_job_t C, int target_dc, int attempt);
@@ -497,8 +527,9 @@ static int tcp_direct_close (connection_job_t C, int who) {
 }
 
 /* Alarm handler for non-DRS direct client connections (obfs2).
-   Handles retry when DC connection is not yet established. */
+   Handles rate limit resume and DC retry. */
 static int tcp_direct_client_alarm (connection_job_t C) {
+  if (rate_limit_resume (C)) { return 0; }
   struct connection_info *c = CONN_INFO(C);
   if (!c->extra && TCP_RPC_DATA(C)->extra_int > 0) {
     direct_retry_dc_connection (C);
@@ -973,6 +1004,7 @@ static int ext_rand_pad_only = 0;
 static char ext_secret_label[16][EXT_SECRET_LABEL_MAX + 1];
 static int ext_secret_limit[16];  /* 0 = unlimited */
 static long long ext_secret_quota[16];   /* byte quota, rx+tx (0 = unlimited) */
+static long long ext_secret_rate_limit[16]; /* bytes/sec per IP (0 = unlimited) */
 static int ext_secret_max_ips[16];       /* unique IP limit (0 = unlimited) */
 static int64_t ext_secret_expires[16];   /* Unix timestamp (0 = never) */
 
@@ -983,13 +1015,16 @@ struct tracked_ip {
   unsigned ip;              /* IPv4 (host byte order), 0 = empty */
   unsigned char ipv6[16];   /* IPv6 address */
   int connections;          /* active connections from this IP */
+  long long tokens;         /* rate limit token bucket: available bytes */
+  double last_refill_time;  /* precise_now at last token refill */
 };
 
 static struct tracked_ip per_secret_ips[16][SECRET_MAX_TRACKED_IPS];
 static int per_secret_unique_ip_count[16];
 
 void tcp_rpcs_set_ext_secret (unsigned char secret[16], const char *label,
-                              int limit, long long quota, int max_ips, int64_t expires) {
+                              int limit, long long quota, long long rate_limit,
+                              int max_ips, int64_t expires) {
   assert (ext_secret_cnt < 16);
   int idx = ext_secret_cnt++;
   memcpy (ext_secret[idx], secret, 16);
@@ -1000,13 +1035,14 @@ void tcp_rpcs_set_ext_secret (unsigned char secret[16], const char *label,
   }
   ext_secret_limit[idx] = limit;
   ext_secret_quota[idx] = quota;
+  ext_secret_rate_limit[idx] = rate_limit;
   ext_secret_max_ips[idx] = max_ips;
   ext_secret_expires[idx] = expires;
   memset (per_secret_ips[idx], 0, sizeof (per_secret_ips[idx]));
   per_secret_unique_ip_count[idx] = 0;
 
-  vkprintf (0, "Added secret #%d label=[%s] limit=%d quota=%lld max_ips=%d expires=%lld\n",
-            idx, ext_secret_label[idx], limit, quota, max_ips, (long long) expires);
+  vkprintf (0, "Added secret #%d label=[%s] limit=%d quota=%lld rate_limit=%lld max_ips=%d expires=%lld\n",
+            idx, ext_secret_label[idx], limit, quota, rate_limit, max_ips, (long long) expires);
 }
 
 const char *tcp_rpcs_get_ext_secret_label (int index) {
@@ -1022,6 +1058,11 @@ int tcp_rpcs_get_ext_secret_limit (int index) {
 long long tcp_rpcs_get_ext_secret_quota (int index) {
   assert (index >= 0 && index < ext_secret_cnt);
   return ext_secret_quota[index];
+}
+
+long long tcp_rpcs_get_ext_secret_rate_limit (int index) {
+  assert (index >= 0 && index < ext_secret_cnt);
+  return ext_secret_rate_limit[index];
 }
 
 int tcp_rpcs_get_ext_secret_max_ips (int index) {
@@ -1087,7 +1128,7 @@ static int ip_over_limit (int secret_id, unsigned ip, const unsigned char *ipv6)
 
 /* Track a new connection from an IP.  Must be called AFTER all checks pass. */
 static void ip_track_connect (int secret_id, unsigned ip, const unsigned char *ipv6) {
-  if (ext_secret_max_ips[secret_id] <= 0) { return; }
+  if (ext_secret_max_ips[secret_id] <= 0 && ext_secret_rate_limit[secret_id] <= 0) { return; }
 
   static const unsigned char zero_ipv6[16] = {};
 
@@ -1110,6 +1151,14 @@ static void ip_track_connect (int secret_id, unsigned ip, const unsigned char *i
       e->ip = ip;
       if (ipv6) { memcpy (e->ipv6, ipv6, 16); } else { memset (e->ipv6, 0, 16); }
       e->connections = 1;
+      /* Initialize rate limit token bucket */
+      long long rl = ext_secret_rate_limit[secret_id];
+      if (rl > 0) {
+        long long eff = workers > 1 ? rl / workers : rl;
+        if (eff < 1) { eff = 1; }
+        e->tokens = eff;  /* start with 1s burst */
+        e->last_refill_time = precise_now;
+      }
       per_secret_unique_ip_count[secret_id]++;
       per_secret_unique_ips[secret_id]++;
       return;
@@ -1121,7 +1170,7 @@ static void ip_track_connect (int secret_id, unsigned ip, const unsigned char *i
 }
 
 static void ip_track_disconnect_impl (int secret_id, unsigned ip, const unsigned char *ipv6) {
-  if (ext_secret_max_ips[secret_id] <= 0) { return; }
+  if (ext_secret_max_ips[secret_id] <= 0 && ext_secret_rate_limit[secret_id] <= 0) { return; }
 
   static const unsigned char zero_ipv6[16] = {};
 
@@ -1152,6 +1201,84 @@ void tcp_rpcs_ip_track_disconnect (int secret_id, unsigned ip, const unsigned ch
   ip_track_disconnect_impl (secret_id, ip, ipv6);
 }
 
+/*
+ *  Per-IP rate limiting (token bucket)
+ */
+
+/* Find the tracked_ip entry for a given IP within a secret's table. */
+static struct tracked_ip *find_tracked_ip (int secret_id, unsigned ip, const unsigned char *ipv6) {
+  static const unsigned char zero_ipv6[16] = {};
+  for (int i = 0; i < SECRET_MAX_TRACKED_IPS; i++) {
+    struct tracked_ip *e = &per_secret_ips[secret_id][i];
+    if (e->connections <= 0) { continue; }
+    if (ip != 0) {
+      if (e->ip == ip) { return e; }
+    } else {
+      if (e->ip == 0 && memcmp (e->ipv6, zero_ipv6, 16) != 0 &&
+          memcmp (e->ipv6, ipv6, 16) == 0) { return e; }
+    }
+  }
+  return NULL;
+}
+
+/* Refill tokens based on elapsed time.  Returns available tokens. */
+static long long rate_bucket_refill (struct tracked_ip *tip, long long eff_rate) {
+  double elapsed = precise_now - tip->last_refill_time;
+  if (elapsed > 0) {
+    long long refill = (long long)(elapsed * eff_rate);
+    tip->tokens += refill;
+    if (tip->tokens > eff_rate) {
+      tip->tokens = eff_rate;  /* cap at 1-second burst */
+    }
+    tip->last_refill_time = precise_now;
+  }
+  return tip->tokens;
+}
+
+/* Consume tokens after a relay and throttle if bucket goes negative.
+   Sets C_STOPREAD on the connection and schedules a timer to resume.
+   Must be called AFTER tcp_direct_relay(). */
+static void rate_limit_after_relay (connection_job_t C, int secret_id,
+                                    long long bytes, unsigned ip,
+                                    const unsigned char *ipv6) {
+  long long rl = ext_secret_rate_limit[secret_id];
+  if (rl <= 0) { return; }
+
+  struct tracked_ip *tip = find_tracked_ip (secret_id, ip, ipv6);
+  if (!tip) { return; }
+
+  long long eff = workers > 1 ? rl / workers : rl;
+  if (eff < 1) { eff = 1; }
+
+  rate_bucket_refill (tip, eff);
+  tip->tokens -= bytes;
+
+  if (tip->tokens < 0) {
+    per_secret_rate_limited[secret_id]++;
+    struct connection_info *c = CONN_INFO (C);
+    __sync_fetch_and_or (&c->flags, C_STOPREAD);
+    if (c->io_conn) {
+      __sync_fetch_and_or (&SOCKET_CONN_INFO(c->io_conn)->flags, C_STOPREAD);
+    }
+    double delay = (double)(-tip->tokens) / (double)eff;
+    if (delay < 0.001) { delay = 0.001; }
+    if (delay > 5.0) { delay = 5.0; }
+    job_timer_insert (C, precise_now + delay);
+  }
+}
+
+/* Resume reading after rate limit pause (called from alarm handlers). */
+static int rate_limit_resume (connection_job_t C) {
+  struct connection_info *c = CONN_INFO (C);
+  if (!(c->flags & C_STOPREAD)) { return 0; }
+  __sync_fetch_and_and (&c->flags, ~C_STOPREAD);
+  if (c->io_conn) {
+    __sync_fetch_and_and (&SOCKET_CONN_INFO(c->io_conn)->flags, ~C_STOPREAD);
+    job_signal (JOB_REF_CREATE_PASS (c->io_conn), JS_RUN);
+  }
+  return 1;
+}
+
 void tcp_rpcs_set_ext_rand_pad_only(int set) {
   ext_rand_pad_only = set;
 }
@@ -1163,6 +1290,7 @@ void tcp_rpcs_pin_ext_secrets (void) {
 int tcp_rpcs_reload_ext_secrets (const unsigned char secrets[][16],
                                 const char labels[][EXT_SECRET_LABEL_MAX + 1],
                                 const int *limits, const long long *quotas,
+                                const long long *rate_limits,
                                 const int *max_ips_arr, const int64_t *expires_arr,
                                 int count) {
   int total = ext_secret_pinned + count;
@@ -1183,6 +1311,7 @@ int tcp_rpcs_reload_ext_secrets (const unsigned char secrets[][16],
     }
     ext_secret_limit[idx] = limits[i];
     ext_secret_quota[idx] = quotas ? quotas[i] : 0;
+    ext_secret_rate_limit[idx] = rate_limits ? rate_limits[i] : 0;
     ext_secret_max_ips[idx] = max_ips_arr ? max_ips_arr[i] : 0;
     ext_secret_expires[idx] = expires_arr ? expires_arr[i] : 0;
   }
@@ -2020,6 +2149,9 @@ int tcp_rpcs_ext_alarm (connection_job_t C) {
 static int tcp_rpcs_ext_drs_alarm (connection_job_t C) {
   struct connection_info *c = CONN_INFO (C);
   struct tcp_rpc_data *D = TCP_RPC_DATA (C);
+
+  /* Rate limit resume (must be checked before other conditions) */
+  if (rate_limit_resume (C)) { return 0; }
 
   /* Direct client retry: DC connection not yet established */
   if (c->type == &ct_direct_client_drs && !c->extra && D->extra_int > 0) {

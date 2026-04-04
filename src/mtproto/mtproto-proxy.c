@@ -212,6 +212,7 @@ long long per_secret_rejected_quota[16];
 long long per_secret_rejected_ips[16];
 long long per_secret_rejected_expired[16];
 long long per_secret_unique_ips[16];
+long long per_secret_rate_limited[16];
 
 struct ext_connection_ref OutExtConnections[EXT_CONN_TABLE_SIZE];
 struct ext_connection *InExtConnectionHash[EXT_CONN_HASH_SIZE];
@@ -445,6 +446,7 @@ struct worker_stats {
   long long per_secret_rejected_ips[16];
   long long per_secret_rejected_expired[16];
   long long per_secret_unique_ips[16];
+  long long per_secret_rate_limited[16];
 };
 
 struct worker_stats *WStats, SumStats;
@@ -525,6 +527,7 @@ static void update_local_stats_copy (struct worker_stats *S) {
     UPD (per_secret_rejected_ips[_i]);
     UPD (per_secret_rejected_expired[_i]);
     UPD (per_secret_unique_ips[_i]);
+    UPD (per_secret_rate_limited[_i]);
   }}
 #undef UPD
   __sync_synchronize();
@@ -622,6 +625,7 @@ static inline void add_stats (struct worker_stats *W) {
     UPD (per_secret_rejected_ips[_i]);
     UPD (per_secret_rejected_expired[_i]);
     UPD (per_secret_unique_ips[_i]);
+    UPD (per_secret_rate_limited[_i]);
   }}
 #undef UPD
 }
@@ -888,6 +892,11 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
       if (_exp > 0) {
         sb_printf (sb, "secret_%s_expires\t%lld\n", _lbl, (long long) _exp);
       }
+      long long _rl = tcp_rpcs_get_ext_secret_rate_limit (_i);
+      if (_rl > 0) {
+        sb_printf (sb, "secret_%s_rate_limit\t%lld\n", _lbl, _rl);
+      }
+      sb_printf (sb, "secret_%s_rate_limited\t%lld\n", _lbl, S(per_secret_rate_limited[_i]));
     }
   }
 #undef S
@@ -1203,6 +1212,20 @@ void mtfront_prepare_prometheus_stats (stats_buffer_t *sb) {
       for (_i = 0; _i < _sc; _i++) {
         sb_printf (sb, "teleproxy_secret_rejected_expired_total{secret=\"%s\"} %lld\n",
 	         tcp_rpcs_get_ext_secret_label (_i), S(per_secret_rejected_expired[_i]));
+      }
+      sb_printf (sb,
+	       "# HELP teleproxy_secret_rate_limit_bytes Configured per-IP rate limit in bytes/sec (0=unlimited).\n"
+	       "# TYPE teleproxy_secret_rate_limit_bytes gauge\n");
+      for (_i = 0; _i < _sc; _i++) {
+        sb_printf (sb, "teleproxy_secret_rate_limit_bytes{secret=\"%s\"} %lld\n",
+	         tcp_rpcs_get_ext_secret_label (_i), tcp_rpcs_get_ext_secret_rate_limit (_i));
+      }
+      sb_printf (sb,
+	       "# HELP teleproxy_secret_rate_limited_total Times per-IP rate limiting was applied.\n"
+	       "# TYPE teleproxy_secret_rate_limited_total counter\n");
+      for (_i = 0; _i < _sc; _i++) {
+        sb_printf (sb, "teleproxy_secret_rate_limited_total{secret=\"%s\"} %lld\n",
+	         tcp_rpcs_get_ext_secret_label (_i), S(per_secret_rate_limited[_i]));
       }
     }
   }
@@ -2832,6 +2855,7 @@ static void apply_toml_secrets (struct toml_config *cfg) {
   char labels[TOML_CONFIG_MAX_SECRETS][EXT_SECRET_LABEL_MAX + 1];
   int limits[TOML_CONFIG_MAX_SECRETS];
   long long quotas[TOML_CONFIG_MAX_SECRETS];
+  long long rate_limits[TOML_CONFIG_MAX_SECRETS];
   int max_ips[TOML_CONFIG_MAX_SECRETS];
   int64_t expires[TOML_CONFIG_MAX_SECRETS];
 
@@ -2840,11 +2864,12 @@ static void apply_toml_secrets (struct toml_config *cfg) {
     snprintf (labels[i], sizeof (labels[i]), "%s", cfg->secrets[i].label);
     limits[i] = cfg->secrets[i].limit;
     quotas[i] = cfg->secrets[i].quota;
+    rate_limits[i] = cfg->secrets[i].rate_limit;
     max_ips[i] = cfg->secrets[i].max_ips;
     expires[i] = cfg->secrets[i].expires;
   }
 
-  tcp_rpcs_reload_ext_secrets (keys, labels, limits, quotas, max_ips, expires, cfg->secret_count);
+  tcp_rpcs_reload_ext_secrets (keys, labels, limits, quotas, rate_limits, max_ips, expires, cfg->secret_count);
 }
 
 static void mtfront_sighup_handler (void) {
@@ -3024,7 +3049,7 @@ int f_parse_option (int val) {
         }
       }
       if (val == 'S') {
-	tcp_rpcs_set_ext_secret (secret, label, conn_limit, 0, 0, 0);
+	tcp_rpcs_set_ext_secret (secret, label, conn_limit, 0, 0, 0, 0);
 	secret_count++;
       } else {
 	memcpy (proxy_tag, secret, sizeof (proxy_tag));

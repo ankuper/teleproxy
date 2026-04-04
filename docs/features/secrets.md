@@ -136,6 +136,38 @@ Metrics:
 - **Stats:** `secret_guest_quota 10737418240`, `secret_guest_bytes_total 5368709120`, `secret_guest_rejected_quota 3`
 - **Prometheus:** `teleproxy_secret_quota_bytes{secret="guest"} 10737418240`, `teleproxy_secret_bytes_total{secret="guest"} 5368709120`
 
+## Per-IP Rate Limiting
+
+Cap real-time throughput per source IP. Uses a token bucket algorithm — each IP gets a bucket that refills at the configured rate. When the bucket is empty, reads are paused until tokens refill. Unlike quota (which closes connections), rate limiting throttles via TCP backpressure — users see slower speeds, not dropped connections.
+
+TOML config:
+
+```toml
+[[secret]]
+key = "cafe...ab"
+label = "shared"
+rate_limit = "10M"   # 10 MB/s per IP (accepts: bytes/sec int, or "500K", "10M")
+```
+
+Docker:
+
+```bash
+SECRET_RATE_LIMIT_1=10485760   # 10 MB/s in bytes/sec
+# or human-readable:
+SECRET_RATE_LIMIT_1=10M
+```
+
+The rate limit is combined (received + sent) per source IP. Burst size is 1 second of tokens — a new connection can burst up to the rate limit before throttling kicks in.
+
+Multi-worker note: with `-M N` workers, each enforces `rate_limit / N` independently.
+
+Reloadable: changing `rate_limit` on SIGHUP takes effect immediately for new data.
+
+Metrics:
+
+- **Stats:** `secret_shared_rate_limit 10485760`, `secret_shared_rate_limited 42`
+- **Prometheus:** `teleproxy_secret_rate_limit_bytes{secret="shared"} 10485760`, `teleproxy_secret_rate_limited_total{secret="shared"} 42`
+
 ## Per-Secret Unique IP Limits
 
 Cap how many distinct client IPs can use a secret simultaneously. Additional connections from an already-connected IP are allowed.
@@ -196,6 +228,7 @@ key = "cafe01234567890abcafe01234567890a"
 label = "family"
 limit = 100
 quota = "50G"
+rate_limit = "10M"
 max_ips = 10
 expires = 2026-12-31T23:59:59Z
 
@@ -204,6 +237,7 @@ key = "dead01234567890abcead01234567890a"
 label = "guest"
 limit = 50
 quota = "5G"
+rate_limit = "2M"
 max_ips = 3
 expires = 2025-06-30T00:00:00Z
 ```

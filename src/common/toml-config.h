@@ -22,6 +22,7 @@ struct toml_secret {
   char label[TOML_SECRET_LABEL_MAX + 1];
   int limit;
   long long quota;      /* byte quota, rx+tx combined (0 = unlimited) */
+  long long rate_limit; /* bytes/sec per IP, rx+tx combined (0 = unlimited) */
   int max_ips;          /* unique IP limit (0 = unlimited) */
   int64_t expires;      /* Unix timestamp (0 = never expires) */
 };

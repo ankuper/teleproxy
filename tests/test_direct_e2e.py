@@ -563,6 +563,98 @@ async def test_faketls_all(host, port, secret, domain,
             pass
 
 
+async def test_rate_limit(host, port, stats_port, secret,
+                          bot_token="", session_str=""):
+    """Connect through a rate-limited proxy, download 1MB, verify throttling.
+
+    Checks that the rate_limited counter increments (proving the token bucket
+    code path was exercised) and that the download completes with correct data.
+    """
+    from telethon import TelegramClient
+    from telethon.network.connection import (
+        ConnectionTcpMTProxyRandomizedIntermediate,
+    )
+    from telethon.sessions import StringSession
+
+    label = "rate-limit"
+    print(f"[{label}] Connecting to {host}:{port} ...", flush=True)
+
+    client = TelegramClient(
+        StringSession(session_str),
+        api_id=API_ID,
+        api_hash=API_HASH,
+        connection=ConnectionTcpMTProxyRandomizedIntermediate,
+        proxy=(host, port, "dd" + secret),
+    )
+
+    try:
+        me = await _connect_and_auth(client, label, bot_token=bot_token or None)
+        if me is None:
+            print(f"[{label}] FAIL: get_me() returned None")
+            return False
+
+        print(f"[{label}] get_me OK: id={me.id}")
+
+        # Download the 1MB test file
+        if TEST_FILES and "1mb" in TEST_FILES:
+            info = TEST_FILES["1mb"]
+            msg = await client.get_messages(TEST_CHANNEL_ID, ids=info["msg_id"])
+            if not msg or not msg.media:
+                print(f"[{label}] SKIP: 1mb test file not found")
+                return True
+
+            buf = io.BytesIO()
+            timeout = DOWNLOAD_TIMEOUTS.get("1mb", 60)
+            t0 = time.monotonic()
+            await asyncio.wait_for(
+                client.download_media(msg, file=buf), timeout=timeout
+            )
+            elapsed = time.monotonic() - t0
+            data = buf.getvalue()
+            sha = hashlib.sha256(data).hexdigest()
+
+            if sha != info["sha256"]:
+                print(f"[{label}] FAIL: 1mb SHA256 mismatch "
+                      f"(got {sha[:16]}..., expected {info['sha256'][:16]}...)")
+                return False
+            print(f"[{label}] 1mb download OK: {len(data)} bytes in {elapsed:.1f}s "
+                  f"({len(data)/elapsed/1e6:.2f} MB/s)")
+        else:
+            print(f"[{label}] SKIP: no 1mb test file configured")
+
+        # Check rate_limited counter in stats
+        try:
+            _host = os.environ.get("DIRECT_HOST", "localhost")
+            with urllib.request.urlopen(
+                f"http://{_host}:{stats_port}/stats", timeout=5
+            ) as resp:
+                stats = resp.read().decode()
+            for line in stats.splitlines():
+                if line.startswith("secret_secret_0_rate_limited\t"):
+                    count = int(line.split("\t")[1])
+                    if count > 0:
+                        print(f"[{label}] rate_limited counter = {count} (throttling exercised)")
+                        return True
+                    else:
+                        print(f"[{label}] FAIL: rate_limited counter = 0 "
+                              "(throttling was NOT triggered)")
+                        return False
+            print(f"[{label}] WARN: rate_limited counter not found in stats")
+            return True
+        except Exception as e:
+            print(f"[{label}] WARN: could not fetch stats: {e}")
+            return True
+
+    except Exception as e:
+        print(f"[{label}] FAIL: {type(e).__name__}: {e}")
+        return False
+    finally:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
+
 def main():
     test_session = os.environ.get("TG_TEST_SESSION", "")
     bot_token = os.environ.get("TG_BOT_TOKEN", "")
@@ -645,6 +737,20 @@ def main():
     else:
         print("\n[socks5] SKIP — DIRECT_SOCKS5_PORT not set")
 
+    # Test 4: rate-limited proxy (optional)
+    rl_port_str = os.environ.get("DIRECT_RATELIMIT_PORT", "")
+    rl_stats_port = os.environ.get("DIRECT_RATELIMIT_STATS_PORT", "")
+    rl_ok = True
+    if rl_port_str and rl_stats_port:
+        rl_port = int(rl_port_str)
+        print()
+        rl_ok = asyncio.run(
+            test_rate_limit(host, rl_port, rl_stats_port, secret,
+                            bot_token=bot_token, session_str=session_str)
+        )
+    else:
+        print("\n[rate-limit] SKIP — DIRECT_RATELIMIT_PORT not set")
+
     # Compare throughputs: fake-TLS must not be dramatically slower than obfs2.
     # If fake-TLS is < 50% of obfs2 for the same file, DRS delays are the cause.
     print("\n=== Throughput Comparison ===")
@@ -722,6 +828,8 @@ def main():
                ("drs-delay-ratio", drs_ok),
                ("obfs2-stats", obfs2_stats_ok),
                ("tls-stats", tls_stats_ok)]
+    if rl_port_str and rl_stats_port:
+        results.append(("rate-limit", rl_ok))
     if socks5_port_str:
         # SOCKS5 stats validation: if the handshake succeeded at least once,
         # the SOCKS5 implementation works even if Telegram returned

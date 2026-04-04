@@ -75,6 +75,9 @@ jobs:
     - name: Run Secret Quota/IP/Expiry Tests
       run: make test-secret-quota
 
+    - name: Run Rate Limit Config Tests
+      run: make test-rate-limit
+
     - name: Run Config Reload Tests
       run: make test-config-reload
 
@@ -314,8 +317,18 @@ jobs:
           --http-stats --direct --socks5 socks5://127.0.0.1:1080 -M 0 -v 1 2>socks5.log &
         echo "Started SOCKS5-proxied proxy on port 10443"
 
+        # Rate-limited direct-mode proxy (200 KB/s per IP)
+        cat > rate_limit.toml <<TOML
+        [[secret]]
+        key = "$SECRET"
+        rate_limit = "200K"
+        TOML
+        ./teleproxy --config rate_limit.toml \
+          -u nobody -p 11888 -H 11443 --http-stats --direct -M 0 2>ratelimit.log &
+        echo "Started rate-limited direct-mode proxy on port 11443"
+
         # Wait for all proxies to be ready
-        for port in 8888 9888 10888; do
+        for port in 8888 9888 10888 11888; do
           for i in $(seq 1 30); do
             curl -sf http://localhost:$port/stats >/dev/null 2>&1 && break
             sleep 2
@@ -338,6 +351,8 @@ jobs:
         DIRECT_TLS_PORT=9443 \
         DIRECT_SOCKS5_PORT=10443 \
         DIRECT_SOCKS5_STATS_PORT=10888 \
+        DIRECT_RATELIMIT_PORT=11443 \
+        DIRECT_RATELIMIT_STATS_PORT=11888 \
         TELEPROXY_SECRET=$TELEPROXY_SECRET \
         EE_DOMAIN=ya.ru \
         python3 tests/test_direct_e2e.py
@@ -356,6 +371,9 @@ jobs:
         echo ""
         echo "=== Fake-TLS proxy log ==="
         cat teleproxy-run/faketls.log 2>/dev/null || echo "(no log)"
+        echo ""
+        echo "=== Rate-limit proxy log ==="
+        cat teleproxy-run/ratelimit.log 2>/dev/null || echo "(no log)"
 
   test-asan:
     runs-on: ubuntu-latest
