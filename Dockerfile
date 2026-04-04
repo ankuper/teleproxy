@@ -21,6 +21,14 @@ RUN make clean && make -j$(nproc) EXTRA_VERSION="${VERSION}"
 # Runtime image
 FROM alpine:3.21
 
+# OCI labels — ghcr.io reads these for the package page
+LABEL org.opencontainers.image.source="https://github.com/teleproxy/teleproxy"
+LABEL org.opencontainers.image.description="High-performance MTProto proxy for Telegram with DPI resistance and fake-TLS camouflage"
+LABEL org.opencontainers.image.licenses="GPL-2.0-only"
+LABEL org.opencontainers.image.url="https://teleproxy.github.io"
+LABEL org.opencontainers.image.documentation="https://teleproxy.github.io"
+LABEL org.opencontainers.image.vendor="teleproxy"
+
 # Install runtime dependencies
 # curl: config downloads + health check
 # openssl: runtime libs (libssl3/libcrypto3) + CLI for secret generation
