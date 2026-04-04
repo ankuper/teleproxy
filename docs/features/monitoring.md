@@ -28,6 +28,16 @@ Returns Prometheus exposition format on the same stats port. Includes per-secret
 
 Available metrics include connection counts, per-secret connections, rejection counts, and IP ACL rejections.
 
+## Grafana Dashboard
+
+Import the [bundled dashboard](https://github.com/teleproxy/teleproxy/blob/main/dashboards/teleproxy.json) into Grafana:
+
+1. Download `dashboards/teleproxy.json` from the repository
+2. In Grafana → Dashboards → Import → Upload JSON file
+3. Select your Prometheus datasource
+
+The dashboard covers connections, per-secret usage, rejection rates, DC connectivity, and resource utilization.
+
 ## Health Checks
 
 Docker containers include built-in health monitoring via the stats endpoint. Check with:

@@ -1,0 +1,9 @@
+exclusions:
+  template-job-rule:
+    reason: "Single-process proxy; job selector not applicable"
+  template-instance-rule:
+    reason: "Single-process proxy; instance selector not applicable"
+  target-job-rule:
+    reason: "Single-process proxy; job matcher not needed"
+  target-instance-rule:
+    reason: "Single-process proxy; instance matcher not needed"

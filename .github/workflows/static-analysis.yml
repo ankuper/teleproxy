@@ -18,6 +18,21 @@ jobs:
     - name: Run cppcheck
       run: make lint
 
+  dashboard-lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-go@v5
+      with:
+        go-version: 'stable'
+
+    - name: Install dashboard-linter
+      run: go install github.com/grafana/dashboard-linter@latest
+
+    - name: Lint Grafana dashboards
+      run: dashboard-linter lint dashboards/*.json --strict
+
   codeql:
     runs-on: ubuntu-latest
     permissions:

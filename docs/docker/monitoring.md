@@ -26,4 +26,6 @@ Docker containers include built-in health monitoring via the stats endpoint. Che
 docker ps  # STATUS column shows health
 ```
 
+For a ready-made Grafana dashboard, see [Monitoring → Grafana Dashboard](../features/monitoring.md#grafana-dashboard).
+
 For CLI monitoring options and detailed metric descriptions, see [Monitoring](../features/monitoring.md).
