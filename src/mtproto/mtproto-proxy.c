@@ -2697,26 +2697,42 @@ static void mtfront_prepare_link_page (stats_buffer_t *sb,
     if (toml_cfg.domain_count > 0 && toml_cfg.domains[0][0]) {
       pos += snprintf (secret_hex + pos, sizeof (secret_hex) - pos, "ee");
       for (int j = 0; j < 16; j++) {
-        pos += snprintf (secret_hex + pos, sizeof (secret_hex) - pos,
-                         "%02x", toml_cfg.secrets[i].key[j]);
+        int rem = (int)sizeof (secret_hex) - pos;
+        if (rem <= 0) break;
+        int w = snprintf (secret_hex + pos, rem,
+                          "%02x", toml_cfg.secrets[i].key[j]);
+        if (w < 0 || w >= rem) break;
+        pos += w;
       }
       const char *dom = toml_cfg.domains[0];
       const char *dom_colon = strchr (dom, ':');
       int dom_len = dom_colon ? (int)(dom_colon - dom) : (int)strlen (dom);
       for (int j = 0; j < dom_len; j++) {
-        pos += snprintf (secret_hex + pos, sizeof (secret_hex) - pos,
-                         "%02x", (unsigned char)dom[j]);
+        int rem = (int)sizeof (secret_hex) - pos;
+        if (rem <= 0) break;
+        int w = snprintf (secret_hex + pos, rem,
+                          "%02x", (unsigned char)dom[j]);
+        if (w < 0 || w >= rem) break;
+        pos += w;
       }
     } else if (toml_cfg.random_padding_only == 1) {
       pos += snprintf (secret_hex + pos, sizeof (secret_hex) - pos, "dd");
       for (int j = 0; j < 16; j++) {
-        pos += snprintf (secret_hex + pos, sizeof (secret_hex) - pos,
-                         "%02x", toml_cfg.secrets[i].key[j]);
+        int rem = (int)sizeof (secret_hex) - pos;
+        if (rem <= 0) break;
+        int w = snprintf (secret_hex + pos, rem,
+                          "%02x", toml_cfg.secrets[i].key[j]);
+        if (w < 0 || w >= rem) break;
+        pos += w;
       }
     } else {
       for (int j = 0; j < 16; j++) {
-        pos += snprintf (secret_hex + pos, sizeof (secret_hex) - pos,
-                         "%02x", toml_cfg.secrets[i].key[j]);
+        int rem = (int)sizeof (secret_hex) - pos;
+        if (rem <= 0) break;
+        int w = snprintf (secret_hex + pos, rem,
+                          "%02x", toml_cfg.secrets[i].key[j]);
+        if (w < 0 || w >= rem) break;
+        pos += w;
       }
     }
 
@@ -3384,7 +3400,11 @@ static int cmd_generate_secret (int argc, char *argv[]) {
     pos += snprintf (hex + pos, sizeof (hex) - pos, "ee%s", raw);
     const unsigned char *d = (const unsigned char *)domain;
     while (*d) {
-      pos += snprintf (hex + pos, sizeof (hex) - pos, "%02x", *d);
+      int rem = (int)sizeof (hex) - pos;
+      if (rem <= 0) break;
+      int w = snprintf (hex + pos, rem, "%02x", *d);
+      if (w < 0 || w >= rem) break;
+      pos += w;
       d++;
     }
     printf ("%s\n", hex);
