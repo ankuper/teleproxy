@@ -47,8 +47,9 @@ def test_rate_limit_in_plain_stats():
     assert "secret_limited_rate_limited\t" in stats, (
         f"Expected 'secret_limited_rate_limited' in stats:\n{stats}"
     )
-    # Unlimited secret should NOT have a rate_limit line
-    assert "secret_unlimited_rate_limit" not in stats, (
+    # Unlimited secret should NOT have a rate_limit config line
+    # (but will have rate_limited counter — check with tab to distinguish)
+    assert "secret_unlimited_rate_limit\t" not in stats, (
         f"Unlimited secret should not have a rate_limit line:\n{stats}"
     )
     # But should still have a rate_limited counter
