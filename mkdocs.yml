@@ -40,6 +40,9 @@ theme:
 extra_css:
   - assets/extra.css
 
+extra_javascript:
+  - assets/comparison.js
+
 plugins:
   - search
   - i18n:

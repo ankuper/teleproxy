@@ -237,3 +237,100 @@ article.md-content__inner:has(> .tx-hero:first-child) {
   margin-right: 0;
   margin-left: 0.6rem;
 }
+
+/* ── Comparison table ─────────────────────────────────────────────── */
+
+/* Override Material's inline-block + overflow:auto on the table.
+   Material uses .md-typeset table:not([class]) (0-2-1 specificity)
+   and wraps tables in .md-typeset__scrollwrap (overflow:auto).
+   Both create scroll containers that break position:sticky. */
+.comparison-table .md-typeset__scrollwrap {
+  overflow: visible;
+}
+
+.md-typeset .comparison-table table {
+  display: table;
+  width: 100%;
+  overflow: visible;
+  margin: 0 auto;
+}
+
+/* Teleproxy column highlight (column 3 = index 2, 0-based) */
+.comparison-table th:nth-child(3),
+.comparison-table td:nth-child(3) {
+  background: rgba(61, 126, 166, 0.07);
+}
+
+[data-md-color-scheme="slate"] .comparison-table th:nth-child(3),
+[data-md-color-scheme="slate"] .comparison-table td:nth-child(3) {
+  background: rgba(108, 180, 217, 0.10);
+}
+
+/* Unique Teleproxy win — stronger green highlight */
+.comparison-table td[data-tp-win="true"] {
+  background: rgba(26, 127, 55, 0.12);
+  font-weight: 600;
+}
+
+[data-md-color-scheme="slate"] .comparison-table td[data-tp-win="true"] {
+  background: rgba(63, 185, 80, 0.14);
+}
+
+/* Cell type colors */
+.comparison-table td[data-cell-type="yes"] {
+  color: #1a7f37;
+}
+
+.comparison-table td[data-cell-type="no"] {
+  color: #8b949e;
+  opacity: 0.7;
+}
+
+.comparison-table td[data-cell-type="partial"],
+.comparison-table td[data-cell-type="weak"] {
+  color: #9a6700;
+}
+
+[data-md-color-scheme="slate"] .comparison-table td[data-cell-type="yes"] {
+  color: #3fb950;
+}
+
+[data-md-color-scheme="slate"] .comparison-table td[data-cell-type="no"] {
+  color: #6e7681;
+}
+
+[data-md-color-scheme="slate"] .comparison-table td[data-cell-type="partial"],
+[data-md-color-scheme="slate"] .comparison-table td[data-cell-type="weak"] {
+  color: #d29922;
+}
+
+/* Sticky header — desktop only (Material wraps tables on mobile) */
+@media (min-width: 60em) {
+  .comparison-table table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .comparison-table thead th {
+    position: sticky;
+    top: var(--comparison-sticky-top, 2.4rem);
+    z-index: 2;
+    background: var(--md-default-bg-color);
+    box-shadow: 0 1px 0 var(--md-default-fg-color--lightest);
+  }
+
+  /* Keep Teleproxy column tint on sticky header */
+  .comparison-table thead th:nth-child(3) {
+    background: color-mix(in srgb, var(--md-default-bg-color) 92%, #3d7ea6);
+  }
+
+  [data-md-color-scheme="slate"] .comparison-table thead th:nth-child(3) {
+    background: color-mix(in srgb, var(--md-default-bg-color) 90%, #6cb4d9);
+  }
+}
+
+@media print {
+  .comparison-table thead th {
+    position: static;
+  }
+}

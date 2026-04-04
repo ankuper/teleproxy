@@ -1,6 +1,14 @@
+---
+hide:
+  - navigation
+  - toc
+---
+
 # Сравнение
 
 Teleproxy -- форк оригинального [TelegramMessenger/MTProxy](https://github.com/TelegramMessenger/MTProxy), разработка которого прекращена с 2021 года. На этой странице Teleproxy сравнивается с оригиналом и основными сторонними альтернативами: [mtg](https://github.com/9seconds/mtg) (Go) и [telemt](https://github.com/telemt/telemt) (Rust).
+
+<div class="comparison-table" markdown>
 
 | Возможность | [Оригинал](https://github.com/TelegramMessenger/MTProxy) | **[Teleproxy](https://github.com/teleproxy/teleproxy)** | [mtg](https://github.com/9seconds/mtg) | [telemt](https://github.com/telemt/telemt) |
 |---------|:---:|:---:|:---:|:---:|
@@ -46,5 +54,7 @@ Teleproxy -- форк оригинального [TelegramMessenger/MTProxy](htt
 | Сканирование CodeQL | Нет | Да | Нет | Нет |
 | AddressSanitizer CI | Нет | Да | Нет | Нет |
 | Статический анализ (CI) | Нет | Да | Да | — |
+
+</div>
 
 Teleproxy -- единственная реализация MTProto-прокси с автоматическим сквозным (E2E) тестированием на реальной инфраструктуре Telegram. Набор E2E-тестов подключает клиент Telethon через прокси на обоих транспортах -- obfuscated и fake-TLS -- и проверяет аутентификацию и передачу файлов на тестовом дата-центре Telegram.

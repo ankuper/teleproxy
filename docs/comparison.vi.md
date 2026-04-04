@@ -1,6 +1,14 @@
+---
+hide:
+  - navigation
+  - toc
+---
+
 # So sánh
 
 Teleproxy là một fork của [TelegramMessenger/MTProxy](https://github.com/TelegramMessenger/MTProxy) gốc, dự án đã ngừng phát triển từ năm 2021. Trang này so sánh Teleproxy với bản gốc và các phương án thay thế chính từ bên thứ ba: [mtg](https://github.com/9seconds/mtg) (Go) và [telemt](https://github.com/telemt/telemt) (Rust).
+
+<div class="comparison-table" markdown>
 
 | Tính năng | [Gốc](https://github.com/TelegramMessenger/MTProxy) | **[Teleproxy](https://github.com/teleproxy/teleproxy)** | [mtg](https://github.com/9seconds/mtg) | [telemt](https://github.com/telemt/telemt) |
 |---------|:---:|:---:|:---:|:---:|
@@ -46,5 +54,7 @@ Teleproxy là một fork của [TelegramMessenger/MTProxy](https://github.com/Te
 | Quét bảo mật CodeQL | Không | Có | Không | Không |
 | AddressSanitizer CI | Không | Có | Không | Không |
 | Phân tích tĩnh (CI) | Không | Có | Có | — |
+
+</div>
 
 Teleproxy là triển khai MTProto proxy duy nhất có kiểm thử đầu-cuối (E2E) tự động trên hạ tầng Telegram thực. Bộ kiểm thử E2E kết nối client Telethon qua proxy trên cả hai transport obfuscated và fake-TLS, xác minh xác thực và truyền file trên datacenter thử nghiệm của Telegram.

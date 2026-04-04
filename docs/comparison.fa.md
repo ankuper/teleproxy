@@ -1,6 +1,14 @@
+---
+hide:
+  - navigation
+  - toc
+---
+
 # مقایسه
 
 Teleproxy یک فورک از [TelegramMessenger/MTProxy](https://github.com/TelegramMessenger/MTProxy) اصلی است که توسعه آن از سال ۲۰۲۱ متوقف شده است. این صفحه Teleproxy را با نسخه اصلی و جایگزین‌های اصلی شخص ثالث مقایسه می‌کند: [mtg](https://github.com/9seconds/mtg) (Go) و [telemt](https://github.com/telemt/telemt) (Rust).
+
+<div class="comparison-table" markdown>
 
 | ویژگی | [اصلی](https://github.com/TelegramMessenger/MTProxy) | **[Teleproxy](https://github.com/teleproxy/teleproxy)** | [mtg](https://github.com/9seconds/mtg) | [telemt](https://github.com/telemt/telemt) |
 |---------|:---:|:---:|:---:|:---:|
@@ -46,5 +54,7 @@ Teleproxy یک فورک از [TelegramMessenger/MTProxy](https://github.com/Tele
 | اسکن امنیتی CodeQL | خیر | بله | خیر | خیر |
 | AddressSanitizer CI | خیر | بله | خیر | خیر |
 | تحلیل استاتیک (CI) | خیر | بله | بله | — |
+
+</div>
 
 Teleproxy تنها پیاده‌سازی پروکسی MTProto است که دارای تست سرتاسری (E2E) خودکار بر روی زیرساخت واقعی تلگرام می‌باشد. مجموعه تست‌های E2E یک کلاینت Telethon را از طریق پروکسی روی هر دو ترانسپورت obfuscated و fake-TLS متصل کرده و احراز هویت و انتقال فایل را در دیتاسنتر تست تلگرام تایید می‌کند.
