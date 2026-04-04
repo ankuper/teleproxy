@@ -29,7 +29,7 @@ DOMAIN="www.google.com"
 echo -n "ee${SECRET}" && echo -n $DOMAIN | xxd -plain
 ```
 
-## Собственный TLS-бэкенд (TCP Splitting)
+## Собственный TLS-бэкенд (TCP Splitting) {#custom-tls-backend-tcp-splitting}
 
 Вместо имитации публичного сайта можно запустить собственный веб-сервер за Teleproxy с настоящим TLS-сертификатом. Обычные посетители видят полноценный HTTPS-сайт — сервер неотличим от обычного веб-сервера.
 
