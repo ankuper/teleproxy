@@ -418,6 +418,31 @@ test-install-config:
 		echo "  PASS"
 	@echo "All install-config tests passed!"
 
+test-install-pipe:
+	@echo "Testing install.sh via pipe (simulates curl ... | sh)..."
+	@echo "Pipe test 1: single secret"
+	@out=$$(cat install.sh | SECRET=aabbccdd11223344aabbccdd11223344 sh -s -- --generate-config 2>/dev/null) && \
+		echo "$$out" | grep -c '^\[\[secret\]\]' | grep -qx 1 || { echo "FAIL: expected 1 [[secret]] block"; exit 1; } && \
+		echo "$$out" | grep -q 'key = "aabbccdd11223344aabbccdd11223344"' || { echo "FAIL: wrong key"; exit 1; } && \
+		echo "  PASS"
+	@echo "Pipe test 2: SECRET_COUNT=3"
+	@out=$$(cat install.sh | SECRET_COUNT=3 sh -s -- --generate-config 2>/dev/null) && \
+		count=$$(echo "$$out" | grep -c '^\[\[secret\]\]') && \
+		[ "$$count" -eq 3 ] || { echo "FAIL: expected 3 blocks, got $$count"; exit 1; } && \
+		echo "$$out" | grep -q 'label = "secret_1"' || { echo "FAIL: missing label secret_1"; exit 1; } && \
+		echo "$$out" | grep -q 'label = "secret_3"' || { echo "FAIL: missing label secret_3"; exit 1; } && \
+		echo "  PASS"
+	@echo "Pipe test 3: EE_DOMAIN"
+	@out=$$(cat install.sh | SECRET=aabbccdd11223344aabbccdd11223344 EE_DOMAIN=google.com sh -s -- --generate-config 2>/dev/null) && \
+		echo "$$out" | grep -q 'domain = "google.com"' || { echo "FAIL: missing domain"; exit 1; } && \
+		echo "  PASS"
+	@echo "Pipe test 4: numbered with label and limit"
+	@out=$$(cat install.sh | SECRET_1=aabbccdd11223344aabbccdd11223344 SECRET_LABEL_1=family SECRET_LIMIT_1=500 sh -s -- --generate-config 2>/dev/null) && \
+		echo "$$out" | grep -q 'label = "family"' || { echo "FAIL: missing label family"; exit 1; } && \
+		echo "$$out" | grep -q 'limit = 500' || { echo "FAIL: missing limit 500"; exit 1; } && \
+		echo "  PASS"
+	@echo "All install-pipe tests passed!"
+
 test-dc-lookup:
 	$(MAKE) -C fuzz test
 
