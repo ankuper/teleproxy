@@ -59,12 +59,12 @@ docker run -d \
 **GitHub Container Registry:**
 
 - `ghcr.io/teleproxy/teleproxy:latest`
-- `ghcr.io/teleproxy/teleproxy:v*`
+- `ghcr.io/teleproxy/teleproxy:{version}` (e.g. `4.7.0`, `4.7`, `4`)
 
 **Docker Hub:**
 
 - `rkline0x/teleproxy:latest`
-- `rkline0x/teleproxy:v*`
+- `rkline0x/teleproxy:{version}` (e.g. `4.7.0`, `4.7`, `4`)
 
 Use Docker Hub if your environment has trouble pulling from ghcr.io (e.g. MikroTik RouterOS containers).
 
