@@ -75,3 +75,20 @@ docker build -t teleproxy .
 docker run -d --name teleproxy -p 443:443 -p 8888:8888 teleproxy
 docker logs teleproxy 2>&1 | grep "Generated secret"
 ```
+
+## Обновление
+
+Скачайте свежий образ и пересоздайте контейнер:
+
+```bash
+docker pull ghcr.io/teleproxy/teleproxy:latest
+docker rm -f teleproxy
+docker run -d --name teleproxy -p 443:443 -p 8888:8888 --restart unless-stopped ghcr.io/teleproxy/teleproxy:latest
+```
+
+С Docker Compose:
+
+```bash
+docker compose pull
+docker compose up -d
+```
