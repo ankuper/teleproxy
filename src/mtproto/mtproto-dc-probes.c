@@ -66,18 +66,16 @@ static void record_latency (int idx, double latency) {
 
 static void start_probe (int idx) {
   int dc_id = idx + 1;
-  fprintf (stderr, "DC probe: starting DC %d probe\n", dc_id);
   const struct dc_entry *dc = direct_dc_lookup (dc_id);
   if (!dc || dc->addr_count == 0 || dc->addrs[0].ipv4 == 0) {
-    vkprintf (1, "DC probe: DC %d lookup failed (dc=%p, cnt=%d)\n",
-              dc_id, dc, dc ? dc->addr_count : -1);
+    fprintf (stderr, "DC probe: DC %d lookup failed (dc=%p)\n", dc_id, (void *)dc);
     histograms[idx].failures++;
     return;
   }
 
   int fd = socket (AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
   if (fd < 0) {
-    vkprintf (1, "DC probe: DC %d socket failed: %m\n", dc_id);
+    fprintf (stderr, "DC probe: DC %d socket failed: %s\n", dc_id, strerror (errno));
     histograms[idx].failures++;
     return;
   }
@@ -93,23 +91,22 @@ static void start_probe (int idx) {
 
   int ret = connect (fd, (struct sockaddr *)&addr, sizeof (addr));
   if (ret == 0) {
-    /* Connected immediately */
     double latency = get_utime_monotonic () - probes[idx].start_time;
     record_latency (idx, latency);
-    vkprintf (1, "DC probe: DC %d connected immediately (%.1fms)\n", dc_id, latency * 1000);
+    fprintf (stderr, "DC probe: DC %d immediate (%.1fms)\n", dc_id, latency * 1000);
     close (fd);
     probes[idx].fd = -1;
     return;
   }
   if (errno != EINPROGRESS) {
-    vkprintf (1, "DC probe: DC %d connect failed: %m\n", dc_id);
+    fprintf (stderr, "DC probe: DC %d connect err: %s\n", dc_id, strerror (errno));
     histograms[idx].failures++;
     close (fd);
     probes[idx].fd = -1;
     return;
   }
 
-  vkprintf (2, "DC probe: DC %d connect in progress (fd=%d)\n", dc_id, fd);
+  fprintf (stderr, "DC probe: DC %d in progress fd=%d\n", dc_id, fd);
   probes[idx].fd = fd;
   probes_pending++;
 }
@@ -185,10 +182,10 @@ void dc_probes_check (void) {
     probes_pending--;
 
     if (err) {
-      vkprintf (1, "DC probe: DC %d connect error: %s\n", i + 1, strerror (err));
+      fprintf (stderr, "DC probe: DC %d done err: %s\n", i + 1, strerror (err));
       histograms[i].failures++;
     } else {
-      vkprintf (1, "DC probe: DC %d latency %.1fms\n", i + 1, latency * 1000);
+      fprintf (stderr, "DC probe: DC %d done %.1fms\n", i + 1, latency * 1000);
       record_latency (i, latency);
     }
   }
