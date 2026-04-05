@@ -1,3 +1,8 @@
+---
+title: IPv6 Support
+description: "Enable IPv6 for Teleproxy with the -6 flag. Supports dual-stack and IPv6-only deployments for Telegram proxy connections."
+---
+
 # IPv6
 
 Teleproxy supports IPv6. Enable with the `-6` flag.

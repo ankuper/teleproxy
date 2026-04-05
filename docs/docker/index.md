@@ -1,3 +1,7 @@
+---
+description: "Run Teleproxy in Docker with a single command. Auto-generates secrets and prints connection links. No config files needed."
+---
+
 # Docker Quick Start
 
 The simplest way to run Teleproxy — no configuration needed:

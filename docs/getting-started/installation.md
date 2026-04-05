@@ -1,3 +1,7 @@
+---
+description: "Install Teleproxy via one-liner script, manual binary download, or from source. Supports x86_64 and ARM64 on Linux."
+---
+
 # Installation
 
 ## One-Liner Install (Recommended)

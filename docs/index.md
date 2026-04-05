@@ -2,6 +2,7 @@
 hide:
   - navigation
   - toc
+description: "High-performance MTProto proxy with fake-TLS camouflage and DPI resistance. Makes Telegram traffic indistinguishable from regular HTTPS."
 ---
 
 <div class="tx-hero" markdown>

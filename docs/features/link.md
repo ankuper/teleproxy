@@ -1,3 +1,7 @@
+---
+description: "Generate shareable tg:// proxy URLs and scannable QR codes. Point a phone camera at the terminal to connect instantly."
+---
+
 # Connection Links
 
 The `link` subcommand prints a ready-to-share proxy URL and renders a scannable QR code directly in the terminal. Point a phone camera at the screen to connect — no copy-pasting needed.

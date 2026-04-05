@@ -1,3 +1,7 @@
+---
+description: "Run Teleproxy E2E tests, Docker-based integration tests, and fuzz testing. Covers CI and local test execution."
+---
+
 # Testing
 
 Teleproxy includes a comprehensive test suite. For full details, see [TESTING.md](https://github.com/teleproxy/teleproxy/blob/main/TESTING.md) in the repository.

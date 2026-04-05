@@ -1,3 +1,7 @@
+---
+description: "How Teleproxy defeats deep packet inspection. Current threat landscape, TSPU/ASBI detection methods, and server-side countermeasures."
+---
+
 # DPI Resistance
 
 Teleproxy includes several layers of defense against Deep Packet Inspection (DPI) systems that attempt to identify and block MTProxy traffic.

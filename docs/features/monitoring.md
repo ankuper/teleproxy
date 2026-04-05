@@ -1,3 +1,7 @@
+---
+description: "Built-in HTTP stats endpoint and Prometheus metrics for Teleproxy. Track connections, traffic, per-secret usage, and DC health."
+---
+
 # Monitoring
 
 ## HTTP Stats Endpoint

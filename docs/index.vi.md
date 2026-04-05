@@ -2,6 +2,7 @@
 hide:
   - navigation
   - toc
+description: "Proxy MTProto hiệu suất cao với ngụy trang fake-TLS và chống DPI. Làm cho lưu lượng Telegram không thể phân biệt với HTTPS thông thường."
 ---
 
 <div class="tx-hero" markdown>

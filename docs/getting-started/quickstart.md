@@ -1,3 +1,7 @@
+---
+description: "Get Teleproxy running in under 2 minutes. Download secrets, configure, and connect your first Telegram client through the proxy."
+---
+
 # Quick Start
 
 Get Teleproxy running in under 2 minutes.

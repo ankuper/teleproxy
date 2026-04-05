@@ -2,6 +2,7 @@
 hide:
   - navigation
   - toc
+description: "Сравнение Teleproxy с оригинальным MTProxy, mtg и telemt. Возможности, производительность, размер Docker-образа и обход DPI."
 ---
 
 # Сравнение

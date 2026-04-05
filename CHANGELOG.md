@@ -1,15 +1,6 @@
 # Changelog
 
-## [4.8.0]
-
-DC health probes (#47).
-
-- Periodic TCP handshake probes to all 5 Telegram DCs, exposed as Prometheus histograms (`teleproxy_dc_latency_seconds`), failure counters, and last-latency gauges
-- Disabled by default. Enable with `--dc-probe-interval 30` (CLI), `dc_probe_interval = 30` (TOML), or `DC_PROBE_INTERVAL=30` (Docker env)
-- Probes run in master process only with non-blocking poll for sub-millisecond accuracy
-- Text stats include per-DC latency, average, count, and failure fields
-
-## [Unreleased]
+## [4.9.0]
 
 PROXY protocol v1/v2 listener support.
 
@@ -19,6 +10,23 @@ PROXY protocol v1/v2 listener support.
 - v2 LOCAL command accepted for health check probes
 - New stats: `proxy_protocol_enabled`, `proxy_protocol_connections`, `proxy_protocol_errors`
 - Prometheus metrics: `teleproxy_proxy_protocol_connections_total`, `teleproxy_proxy_protocol_errors_total`
+
+Other changes:
+
+- Fix auto-generated secret not written to TOML config
+- TON wallet donation option
+- Per-page SEO metadata, OpenGraph tags, JSON-LD structured data, robots.txt
+- Complete Russian translation (100%), expanded Farsi and Vietnamese (38%)
+- Merged duplicate issue notification workflows
+
+## [4.8.0]
+
+DC health probes (#47).
+
+- Periodic TCP handshake probes to all 5 Telegram DCs, exposed as Prometheus histograms (`teleproxy_dc_latency_seconds`), failure counters, and last-latency gauges
+- Disabled by default. Enable with `--dc-probe-interval 30` (CLI), `dc_probe_interval = 30` (TOML), or `DC_PROBE_INTERVAL=30` (Docker env)
+- Probes run in master process only with non-blocking poll for sub-millisecond accuracy
+- Text stats include per-DC latency, average, count, and failure fields
 
 ## [4.5.0]
 

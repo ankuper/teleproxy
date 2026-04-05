@@ -1,3 +1,7 @@
+---
+description: "Route Teleproxy outbound connections through a SOCKS5 proxy when the server IP is blocked by Telegram or for origin hiding."
+---
+
 # SOCKS5 Upstream Proxy
 
 Route all outbound connections to Telegram DCs through a SOCKS5 proxy:

@@ -1,3 +1,7 @@
+---
+description: "Cách Teleproxy đánh bại kiểm tra gói tin sâu. Phương pháp phát hiện TSPU/ASBI và các biện pháp đối phó phía máy chủ."
+---
+
 # Kháng DPI
 
 Teleproxy bao gồm nhiều lớp phòng thủ chống lại hệ thống Kiểm tra Gói tin Sâu (DPI) nhằm phát hiện và chặn lưu lượng MTProxy.

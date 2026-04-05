@@ -1,3 +1,7 @@
+---
+description: "Configure Teleproxy EE mode to wrap MTProto in genuine TLS 1.3 handshakes, making proxy traffic indistinguishable from regular HTTPS."
+---
+
 # Fake-TLS (EE Mode)
 
 Teleproxy supports EE mode which makes proxy traffic look like standard TLS 1.3, making it harder to detect and block.

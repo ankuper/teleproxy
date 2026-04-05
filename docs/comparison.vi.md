@@ -2,6 +2,7 @@
 hide:
   - navigation
   - toc
+description: "So sánh Teleproxy với MTProxy gốc, mtg và telemt. Tính năng, hiệu suất, kích thước Docker và khả năng chống DPI."
 ---
 
 # So sánh

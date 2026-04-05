@@ -2,6 +2,7 @@
 hide:
   - navigation
   - toc
+description: "مقایسه Teleproxy با MTProxy اصلی، mtg و telemt. ویژگی‌ها، عملکرد، حجم Docker و مقاومت در برابر DPI."
 ---
 
 # مقایسه

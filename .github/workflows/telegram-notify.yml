@@ -1,4 +1,4 @@
-name: Telegram Notifications
+name: Issue Notifications
 
 on:
   issues:
@@ -54,7 +54,6 @@ jobs:
               return resp.json();
             }
 
-            // Find the thread_id for an issue by scanning its comments for the tracking marker
             async function findThreadId(issueNumber) {
               if (!groupId) return null;
               const comments = await github.rest.issues.listComments({
@@ -70,13 +69,12 @@ jobs:
               return null;
             }
 
-            // After posting to channel, capture the auto-forwarded message in the discussion group
             async function captureThreadId(channelMsgId) {
               if (!groupId) return null;
-              // Wait for Telegram to auto-forward the channel post to the discussion group
-              await new Promise(r => setTimeout(r, 3000));
-
-              const updates = await tgApi('getUpdates', {});
+              const updates = await tgApi('getUpdates', {
+                timeout: 10,
+                allowed_updates: ['message']
+              });
               if (!updates.ok || !updates.result.length) return null;
 
               let threadId = null;
@@ -89,7 +87,6 @@ jobs:
                 }
               }
 
-              // Confirm all updates to prevent pileup
               const lastId = updates.result[updates.result.length - 1].update_id;
               await tgApi('getUpdates', { offset: lastId + 1 });
 
@@ -97,10 +94,13 @@ jobs:
             }
 
             const event = context.eventName;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
 
             if (event === 'issues' && context.payload.action === 'opened') {
-              if (context.payload.issue.user.type === 'Bot') return;
               const i = context.payload.issue;
+              if (i.user.type === 'Bot' || i.user.login === 'rkline0x') return;
+
               const text = `📋 <b>New Issue #${i.number}</b>: ${i.title}\n\nby ${i.user.login}\n<a href="${i.html_url}">View issue</a>`;
 
               const result = await tgApi('sendMessage', {
@@ -115,17 +115,34 @@ jobs:
                 return;
               }
 
-              // Capture the discussion group thread_id and store it on the issue
               const channelMsgId = result.result.message_id;
               const threadId = await captureThreadId(channelMsgId);
+
+              const lines = [
+                `Thanks for opening an issue! A maintainer will review it soon.`,
+                ``,
+                `For project updates, join [@teleproxy_dev](https://t.me/teleproxy_dev) on Telegram.`,
+                `Issues without community interest may be closed after 60 days of inactivity.`,
+                ``,
+                `---`,
+                ``,
+                `**Teleproxy is built and maintained by a single developer.** If it saves you time or keeps your users connected, consider supporting the project:`,
+                ``,
+                `| | |`,
+                `|---|---|`,
+                `| 💳 | **[Donate via Tribute](https://t.me/tribute/app?startapp=dIa9)** (cards, worldwide) |`,
+                `| 💎 | **[TON](https://app.tonkeeper.com/transfer/UQCRB931D__Q2YQmAbUfcuHQ7fHsG3_3At7e6pUtNa6b9bTh)** \`UQCRB931D...b9bTh\` |`,
+              ];
+
               if (threadId) {
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: i.number,
-                  body: `🔔 Posted to Telegram channel\n<!-- tg_thread_id:${threadId} -->`
-                });
+                lines.push(`\n<!-- tg_thread_id:${threadId} -->`);
               }
+
+              await github.rest.issues.createComment({
+                owner, repo,
+                issue_number: i.number,
+                body: lines.join('\n')
+              });
 
             } else if (event === 'issue_comment' && context.payload.action === 'created') {
               const c = context.payload.comment;
@@ -135,7 +152,6 @@ jobs:
               const snippet = mdToHtml(c.body.substring(0, 2000));
               const text = `💬 <b>Comment on #${i.number}</b>: ${i.title}\n\n${snippet}\n\n<a href="${c.html_url}">View comment</a>`;
 
-              // Try to post as a reply in the discussion group thread
               const threadId = await findThreadId(i.number);
               if (threadId && groupId) {
                 const result = await tgApi('sendMessage', {
@@ -152,7 +168,6 @@ jobs:
                 }
               }
 
-              // Fallback: post as standalone channel message
               const result = await tgApi('sendMessage', {
                 chat_id: chatId,
                 text: text,

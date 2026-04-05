@@ -1,3 +1,7 @@
+---
+description: "Accept HAProxy PROXY protocol v1/v2 headers for real client IP preservation behind load balancers like HAProxy, nginx, or AWS NLB."
+---
+
 # PROXY Protocol
 
 Accept [HAProxy PROXY protocol](https://www.haproxy.org/download/2.9/doc/proxy-protocol.txt) v1 (text) and v2 (binary) headers on client listeners. Required when running behind a load balancer (HAProxy, nginx, AWS NLB, etc.) that injects client IP via PROXY protocol.

@@ -1,3 +1,7 @@
+---
+description: "Complete reference for Teleproxy Docker environment variables: secrets, TLS domains, access control, monitoring, and connection limits."
+---
+
 # Docker Configuration
 
 ## Environment Variables

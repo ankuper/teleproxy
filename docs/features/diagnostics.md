@@ -1,3 +1,7 @@
+---
+description: "Validate Teleproxy configuration and test connectivity before accepting clients. The check subcommand troubleshoots common setup issues."
+---
+
 # Diagnostics
 
 The `check` subcommand validates your configuration and tests connectivity before accepting clients. Useful for troubleshooting "my proxy doesn't work" without guessing.

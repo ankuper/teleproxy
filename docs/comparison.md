@@ -2,6 +2,7 @@
 hide:
   - navigation
   - toc
+description: "Side-by-side comparison of Teleproxy vs the original MTProxy, mtg, and telemt. Features, performance, Docker image size, and DPI resistance."
 ---
 
 # Comparison

@@ -3,3 +3,6 @@ contact_links:
   - name: Support this project
     url: https://t.me/tribute/app?startapp=dIa9
     about: "Teleproxy is maintained in one person's spare time. Donations help keep it alive."
+  - name: Donate via TON
+    url: https://app.tonkeeper.com/transfer/UQCRB931D__Q2YQmAbUfcuHQ7fHsG3_3At7e6pUtNa6b9bTh
+    about: "Send TON to the project wallet."

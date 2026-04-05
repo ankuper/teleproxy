@@ -2,6 +2,7 @@
 hide:
   - navigation
   - toc
+description: "پروکسی MTProto با عملکرد بالا با استتار fake-TLS و مقاومت در برابر DPI. ترافیک تلگرام را از HTTPS معمولی غیرقابل تشخیص می‌کند."
 ---
 
 <div class="tx-hero" markdown>

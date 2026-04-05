@@ -1,3 +1,7 @@
+---
+description: "Restrict Teleproxy client connections using CIDR-based IP allowlists and blocklists. Per-file configuration with hot reload support."
+---
+
 # IP Access Control
 
 Restrict client connections by IP using CIDR-based files:

@@ -1,3 +1,7 @@
+---
+description: "Configure up to 16 proxy secrets with labels, per-secret connection limits, and byte quotas for fine-grained access control."
+---
+
 # Secrets & Limits
 
 ## Generating Secrets

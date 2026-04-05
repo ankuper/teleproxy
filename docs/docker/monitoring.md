@@ -1,3 +1,7 @@
+---
+description: "Set up Prometheus and Grafana monitoring for Teleproxy Docker deployments. Includes compose files and dashboard configuration."
+---
+
 # Monitoring
 
 ## HTTP Stats

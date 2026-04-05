@@ -1,3 +1,7 @@
+---
+description: "Bypass Telegram middle-end relays for lower latency and higher throughput. Route clients straight to the nearest Telegram datacenter."
+---
+
 # Direct-to-DC Mode
 
 By default, Teleproxy routes through Telegram's middle-end (ME) relay servers. Direct mode bypasses them:

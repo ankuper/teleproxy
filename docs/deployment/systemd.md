@@ -1,3 +1,7 @@
+---
+description: "Run Teleproxy as a systemd service with automatic restart, resource limits, and security hardening. Includes a complete unit file."
+---
+
 # Systemd
 
 The recommended way to set up systemd is via the [install script](../getting-started/installation.md#one-liner-install-recommended), which creates the service, config file, and user automatically.
