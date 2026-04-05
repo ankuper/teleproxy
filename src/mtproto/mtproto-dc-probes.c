@@ -68,12 +68,15 @@ static void start_probe (int idx) {
   int dc_id = idx + 1;
   const struct dc_entry *dc = direct_dc_lookup (dc_id);
   if (!dc || dc->addr_count == 0 || dc->addrs[0].ipv4 == 0) {
+    vkprintf (1, "DC probe: DC %d lookup failed (dc=%p, cnt=%d)\n",
+              dc_id, dc, dc ? dc->addr_count : -1);
     histograms[idx].failures++;
     return;
   }
 
   int fd = socket (AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
   if (fd < 0) {
+    vkprintf (1, "DC probe: DC %d socket failed: %m\n", dc_id);
     histograms[idx].failures++;
     return;
   }
@@ -194,6 +197,7 @@ void dc_probes_write_prometheus (stats_buffer_t *sb) {
   if (probe_interval <= 0) {
     return;
   }
+  __sync_synchronize ();
 
   sb_printf (sb,
     "# HELP teleproxy_dc_latency_seconds TCP handshake latency to Telegram DCs.\n"
@@ -241,6 +245,7 @@ void dc_probes_write_text_stats (stats_buffer_t *sb) {
   if (probe_interval <= 0) {
     return;
   }
+  __sync_synchronize ();
 
   sb_printf (sb, "dc_probe_interval\t%d\n", probe_interval);
   for (int i = 0; i < DC_PROBE_COUNT; i++) {
