@@ -364,9 +364,10 @@ def _check_proxy_stats(stats_port):
     # total_allocated_connections is only decremented in
     # cpu_server_free_connection() which requires JS_FINISH — a leaked
     # job reference prevents this, leaving sockets in CLOSE_WAIT (#48).
+    # Threshold is 1 because the stats query itself holds a connection.
     allocated = stats.get("total_allocated_connections", 0)
     details["allocated_connections"] = allocated
-    if allocated > 0:
+    if allocated > 1:
         # Allow a brief window for async cleanup
         for _ in range(4):
             time.sleep(0.5)
@@ -380,12 +381,12 @@ def _check_proxy_stats(stats_port):
                         break
             except Exception:
                 break
-            if allocated == 0:
+            if allocated <= 1:
                 break
         details["allocated_connections"] = allocated
-        if allocated > 0:
+        if allocated > 1:
             print(f"  stats: FAIL — total_allocated_connections={allocated} "
-                  f"(expected 0, connection leak / CLOSE_WAIT)")
+                  f"(expected <=1, connection leak / CLOSE_WAIT)")
             ok = False
 
     if ok:
