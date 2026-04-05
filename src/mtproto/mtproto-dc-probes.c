@@ -66,6 +66,7 @@ static void record_latency (int idx, double latency) {
 
 static void start_probe (int idx) {
   int dc_id = idx + 1;
+  fprintf (stderr, "DC probe: starting DC %d probe\n", dc_id);
   const struct dc_entry *dc = direct_dc_lookup (dc_id);
   if (!dc || dc->addr_count == 0 || dc->addrs[0].ipv4 == 0) {
     vkprintf (1, "DC probe: DC %d lookup failed (dc=%p, cnt=%d)\n",
