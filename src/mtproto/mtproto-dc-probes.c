@@ -22,6 +22,8 @@
 #include "mtproto/mtproto-dc-table.h"
 #include "mtproto/mtproto-dc-probes.h"
 
+extern int slave_mode;
+
 #define DC_PROBE_COUNT     5
 #define HISTOGRAM_BUCKETS  11
 #define PROBE_TIMEOUT_SEC  10.0
@@ -120,9 +122,16 @@ void dc_probes_init (int interval_seconds) {
   }
 }
 
+static int dc_probes_cron_logged;
+
 void dc_probes_cron (void) {
   if (probe_interval <= 0) {
     return;
+  }
+  if (!dc_probes_cron_logged) {
+    dc_probes_cron_logged = 1;
+    vkprintf (0, "DC probes: first cron call (interval=%d, now=%d, last=%d, slave=%d)\n",
+              probe_interval, now, last_probe_start, slave_mode);
   }
   if (last_probe_start && now - last_probe_start < probe_interval) {
     return;
