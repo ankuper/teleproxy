@@ -85,7 +85,7 @@ EXELIST	:= ${EXE}/teleproxy
 
 
 OBJECTS	=	\
-  ${OBJ}/src/mtproto/mtproto-proxy.o ${OBJ}/src/mtproto/mtproto-config.o ${OBJ}/src/mtproto/mtproto-dc-table.o ${OBJ}/src/mtproto/mtproto-dc-probes.o ${OBJ}/src/mtproto/mtproto-check.o ${OBJ}/src/mtproto/mtproto-link.o ${OBJ}/src/net/net-tcp-rpc-ext-server.o
+  ${OBJ}/src/mtproto/mtproto-proxy.o ${OBJ}/src/mtproto/mtproto-proxy-stats.o ${OBJ}/src/mtproto/mtproto-proxy-http.o ${OBJ}/src/mtproto/mtproto-config.o ${OBJ}/src/mtproto/mtproto-dc-table.o ${OBJ}/src/mtproto/mtproto-dc-probes.o ${OBJ}/src/mtproto/mtproto-check.o ${OBJ}/src/mtproto/mtproto-link.o ${OBJ}/src/net/net-tcp-rpc-ext-server.o ${OBJ}/src/net/net-tcp-direct-dc.o
 
 DEPENDENCE_CXX		:=	$(subst ${OBJ}/,${DEP}/,$(patsubst %.o,%.d,${OBJECTS_CXX}))
 DEPENDENCE_STRANGE	:=	$(subst ${OBJ}/,${DEP}/,$(patsubst %.o,%.d,${OBJECTS_STRANGE}))
@@ -103,7 +103,7 @@ LIB_OBJS_NORMAL := \
 	${OBJ}/src/jobs/jobs.o ${OBJ}/src/common/mp-queue.o \
 	${OBJ}/src/net/net-events.o ${OBJ}/src/net/net-msg.o ${OBJ}/src/net/net-msg-buffers.o \
 	${OBJ}/src/net/net-config.o ${OBJ}/src/net/net-crypto-aes.o ${OBJ}/src/net/net-crypto-dh.o ${OBJ}/src/net/net-timers.o \
-	${OBJ}/src/net/net-connections.o \
+	${OBJ}/src/net/net-connections.o ${OBJ}/src/net/net-conn-targets.o \
 	${OBJ}/src/net/net-rpc-targets.o \
 	${OBJ}/src/net/net-tcp-connections.o ${OBJ}/src/net/net-tcp-drs.o ${OBJ}/src/net/net-tcp-rpc-common.o ${OBJ}/src/net/net-tcp-rpc-client.o ${OBJ}/src/net/net-tcp-rpc-server.o \
 	${OBJ}/src/net/net-http-server.o ${OBJ}/src/net/net-http-parse.o ${OBJ}/src/net/net-tls-parse.o ${OBJ}/src/net/net-obfs2-parse.o ${OBJ}/src/net/net-ip-acl.o ${OBJ}/src/net/net-proxy-protocol.o \
@@ -116,7 +116,8 @@ LIB_OBJS_NORMAL := \
 	${OBJ}/src/common/kprintf.o \
 	${OBJ}/src/common/precise-time.o ${OBJ}/src/common/cpuid.o \
 	${OBJ}/src/common/server-functions.o ${OBJ}/src/common/crc32.o \
-	${OBJ}/src/common/toml/tomlc17.o ${OBJ}/src/common/toml-config.o \
+	${OBJ}/src/common/toml/tomlc17.o ${OBJ}/src/common/toml/tomlc17-scan.o \
+	${OBJ}/src/common/toml-config.o \
 	${OBJ}/src/common/qrcode/qrcodegen.o \
 
 LIB_OBJS := ${LIB_OBJS_NORMAL}
@@ -144,7 +145,7 @@ ${LIB_OBJS_NORMAL}: ${OBJ}/%.o: %.c | create_dirs_and_headers
 
 ${EXELIST}: ${LIBLIST}
 
-${EXE}/teleproxy:	${OBJ}/src/mtproto/mtproto-proxy.o ${OBJ}/src/mtproto/mtproto-config.o ${OBJ}/src/mtproto/mtproto-dc-table.o ${OBJ}/src/mtproto/mtproto-dc-probes.o ${OBJ}/src/mtproto/mtproto-check.o ${OBJ}/src/mtproto/mtproto-link.o ${OBJ}/src/net/net-tcp-rpc-ext-server.o
+${EXE}/teleproxy:	${OBJ}/src/mtproto/mtproto-proxy.o ${OBJ}/src/mtproto/mtproto-proxy-stats.o ${OBJ}/src/mtproto/mtproto-proxy-http.o ${OBJ}/src/mtproto/mtproto-config.o ${OBJ}/src/mtproto/mtproto-dc-table.o ${OBJ}/src/mtproto/mtproto-dc-probes.o ${OBJ}/src/mtproto/mtproto-check.o ${OBJ}/src/mtproto/mtproto-link.o ${OBJ}/src/net/net-tcp-rpc-ext-server.o ${OBJ}/src/net/net-tcp-direct-dc.o
 	${CC} -o $@ $^ ${LDFLAGS}
 
 ${LIB}/libkdb.a: ${LIB_OBJS}
