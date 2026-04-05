@@ -67,6 +67,7 @@
 #include "mtproto-common.h"
 #include "mtproto-config.h"
 #include "mtproto-dc-table.h"
+#include "mtproto-dc-probes.h"
 #include "common/tl-parse.h"
 #include "engine/engine.h"
 #include "engine/engine-net.h"
@@ -128,6 +129,7 @@ static int window_clamp;
 static int proxy_mode;
 int direct_mode;
 int ipv6_enabled;
+static int dc_probe_interval_from_cli = -1;
 
 #define IS_PROXY_IN	0
 #define IS_PROXY_OUT	1
@@ -899,6 +901,7 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
       sb_printf (sb, "secret_%s_rate_limited\t%lld\n", _lbl, S(per_secret_rate_limited[_i]));
     }
   }
+  dc_probes_write_text_stats (sb);
 #undef S
 #undef S1
 #undef SW
@@ -1229,6 +1232,8 @@ void mtfront_prepare_prometheus_stats (stats_buffer_t *sb) {
       }
     }
   }
+
+  dc_probes_write_prometheus (sb);
 
 #undef S
 #undef S1
@@ -2618,6 +2623,9 @@ void cron (void) {
   compute_stats_sum ();
   check_special_connections_overflow ();
   check_all_conn_buffers ();
+  if (!slave_mode) {
+    dc_probes_cron ();
+  }
 }
 
 int sfd;
@@ -2834,6 +2842,9 @@ void mtfront_pre_loop (void) {
 
 void precise_cron (void) {
   update_local_stats ();
+  if (!slave_mode) {
+    dc_probes_check ();
+  }
 }
 
 static int mtfront_has_active_connections (void) {
@@ -3144,6 +3155,12 @@ int f_parse_option (int val) {
   case 2008:
     proxy_protocol_enabled = 1;
     break;
+  case 2009:
+    dc_probe_interval_from_cli = atoi (optarg);
+    if (dc_probe_interval_from_cli < 0) {
+      dc_probe_interval_from_cli = 0;
+    }
+    break;
   default:
     return -1;
   }
@@ -3170,6 +3187,7 @@ void mtfront_prepare_parse_options (void) {
   parse_option ("config", required_argument, 0, 2006, "path to TOML config file (reloaded on SIGHUP for secrets/ACLs)");
   parse_option ("socks5", required_argument, 0, 2007, "route upstream DC connections through SOCKS5 proxy (socks5://[user:pass@]host:port)");
   parse_option ("proxy-protocol", no_argument, 0, 2008, "enable PROXY protocol v1/v2 on client listeners (for use behind HAProxy/nginx/NLB)");
+  parse_option ("dc-probe-interval", required_argument, 0, 2009, "seconds between DC health probes (0=disabled, default 0)");
 }
 
 void mtfront_parse_extra_args (int argc, char *argv[]) /* {{{ */ {
@@ -3374,6 +3392,19 @@ void mtfront_pre_init (void) {
       } else {
         pids[i] = pid;
       }
+    }
+  }
+
+  if (!slave_mode) {
+    int probe_iv = 0;
+    if (dc_probe_interval_from_cli >= 0) {
+      probe_iv = dc_probe_interval_from_cli;
+    } else if (toml_config_path && toml_cfg.dc_probe_interval >= 0) {
+      probe_iv = toml_cfg.dc_probe_interval;
+    }
+    dc_probes_init (probe_iv);
+    if (probe_iv > 0) {
+      vkprintf (0, "DC probes: interval %d seconds\n", probe_iv);
     }
   }
 }

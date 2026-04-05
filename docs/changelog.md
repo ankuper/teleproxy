@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.8.0
+
+DC health probes ([#47](https://github.com/teleproxy/teleproxy/issues/47)).
+
+- **DC latency probes** - periodic TCP handshake measurement to all 5 Telegram DCs, exposed as Prometheus histograms (`teleproxy_dc_latency_seconds`), failure counters, and last-latency gauges. Helps operators diagnose slow downloads and pick optimal DC routing.
+- Disabled by default. Enable with `--dc-probe-interval 30` (CLI), `dc_probe_interval = 30` (TOML), or `DC_PROBE_INTERVAL=30` (Docker env).
+- Probes run in the master process only. Completion is tracked via non-blocking poll to preserve sub-millisecond accuracy.
+- Text stats endpoint includes per-DC latency, average, count, and failure fields.
+
 ## 4.7.0
 
 Per-secret quotas, unique-IP limits, and expiration ([#26](https://github.com/teleproxy/teleproxy/issues/26)).

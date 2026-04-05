@@ -28,6 +28,27 @@ Returns Prometheus exposition format on the same stats port. Includes per-secret
 
 Available metrics include connection counts, per-secret connections, rejection counts, and IP ACL rejections.
 
+### DC Latency Probes
+
+When enabled, teleproxy periodically probes all 5 Telegram DCs with a TCP handshake and exposes the results as a Prometheus histogram:
+
+```bash
+# Enable with 30-second probe interval
+./teleproxy ... --dc-probe-interval 30
+```
+
+Metrics exposed:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `teleproxy_dc_latency_seconds` | histogram | TCP handshake RTT per DC (labels: `dc="1"`..`dc="5"`) |
+| `teleproxy_dc_probe_failures_total` | counter | Failed probe attempts per DC |
+| `teleproxy_dc_latency_last_seconds` | gauge | Most recent probe latency per DC |
+
+The text `/stats` endpoint includes matching fields: `dc_probe_interval`, `dcN_probe_latency_last`, `dcN_probe_latency_avg`, `dcN_probe_count`, `dcN_probe_failures`.
+
+Disabled by default. Set `dc_probe_interval` in the TOML config or use the `DC_PROBE_INTERVAL` environment variable in Docker.
+
 ## Grafana Dashboard
 
 Import the [bundled dashboard](https://github.com/teleproxy/teleproxy/blob/main/dashboards/teleproxy.json) into Grafana:

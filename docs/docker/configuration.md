@@ -25,6 +25,7 @@
 | `SOCKS5_PROXY` | — | Route upstream DC connections through a SOCKS5 proxy (`socks5://[user:pass@]host:port`) |
 | `PROXY_PROTOCOL` | false | Enable PROXY protocol v1/v2 on client listeners (for HAProxy/nginx/NLB) |
 | `DC_OVERRIDE` | — | Comma-separated DC address overrides for direct mode (e.g. `2:1.2.3.4:443,2:5.6.7.8:443`) |
+| `DC_PROBE_INTERVAL` | — | Seconds between DC health probes (e.g. `30`). Disabled when absent or `0` |
 
 Maximum 16 secrets (binary limit).
 

@@ -105,6 +105,9 @@ jobs:
     - name: Run PROXY Protocol Tests
       run: make test-proxy-protocol
 
+    - name: Run DC Probes Tests
+      run: make test-dc-probes
+
     - name: Test install.sh config generation
       run: make test-install-config
 

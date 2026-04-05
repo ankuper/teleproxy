@@ -73,6 +73,9 @@ struct toml_config {
   int random_padding_only; /* -R; -1 = not set */
   int proxy_protocol;      /* --proxy-protocol; -1 = not set */
 
+  /* DC probes (not reloadable) */
+  int dc_probe_interval;   /* seconds between probe rounds; 0 = disabled; -1 = not set */
+
   /* SOCKS5 upstream proxy (not reloadable) */
   char socks5[256];        /* socks5://[user:pass@]host:port; empty = not set */
 };

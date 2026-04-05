@@ -409,6 +409,9 @@ int toml_config_load (const char *path, struct toml_config *cfg,
   cfg->random_padding_only = get_optional_bool (top, "random_padding_only", -1);
   cfg->proxy_protocol = get_optional_bool (top, "proxy_protocol", -1);
 
+  /* DC probes */
+  cfg->dc_probe_interval = get_optional_int (top, "dc_probe_interval", -1);
+
   /* SOCKS5 upstream proxy */
   get_optional_string (top, "socks5", cfg->socks5, sizeof (cfg->socks5));
 
@@ -471,6 +474,10 @@ int toml_config_reload (const char *path, struct toml_config *cfg) {
   if (new_cfg.proxy_protocol >= 0 && cfg->proxy_protocol >= 0 &&
       new_cfg.proxy_protocol != cfg->proxy_protocol) {
     kprintf ("config reload: 'proxy_protocol' changed — restart required\n");
+  }
+  if (new_cfg.dc_probe_interval >= 0 && cfg->dc_probe_interval >= 0 &&
+      new_cfg.dc_probe_interval != cfg->dc_probe_interval) {
+    kprintf ("config reload: 'dc_probe_interval' changed — restart required\n");
   }
 
   /* Apply reloadable fields */

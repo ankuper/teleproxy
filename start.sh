@@ -211,6 +211,10 @@ TOML_CONFIG="data/config.toml"
         echo "proxy_protocol = true"
     fi
 
+    if [ -n "$DC_PROBE_INTERVAL" ]; then
+        echo "dc_probe_interval = $DC_PROBE_INTERVAL"
+    fi
+
     if [ -n "$DC_OVERRIDE" ]; then
         _save_ifs="$IFS"
         IFS=','
