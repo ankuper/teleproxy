@@ -22,8 +22,6 @@
 #include "mtproto/mtproto-dc-table.h"
 #include "mtproto/mtproto-dc-probes.h"
 
-extern int slave_mode;
-
 #define DC_PROBE_COUNT     5
 #define HISTOGRAM_BUCKETS  11
 #define PROBE_TIMEOUT_SEC  10.0
@@ -47,7 +45,7 @@ struct dc_probe_state {
 };
 
 static int probe_interval;          /* 0 = disabled */
-static int last_probe_start;        /* `now` value when last batch started */
+static double last_probe_start;     /* monotonic time when last batch started */
 static int probes_pending;
 static struct dc_probe_state probes[DC_PROBE_COUNT];
 static struct dc_histogram histograms[DC_PROBE_COUNT];
@@ -122,22 +120,16 @@ void dc_probes_init (int interval_seconds) {
   }
 }
 
-static int dc_probes_cron_logged;
-
 void dc_probes_cron (void) {
   if (probe_interval <= 0) {
     return;
   }
-  if (!dc_probes_cron_logged) {
-    dc_probes_cron_logged = 1;
-    vkprintf (0, "DC probes: first cron call (interval=%d, now=%d, last=%d, slave=%d)\n",
-              probe_interval, now, last_probe_start, slave_mode);
-  }
-  if (last_probe_start && now - last_probe_start < probe_interval) {
+  double now_mono = get_utime_monotonic ();
+  if (last_probe_start > 0 && now_mono - last_probe_start < probe_interval) {
     return;
   }
-  vkprintf (1, "DC probes: starting probe round (now=%d, last=%d)\n", now, last_probe_start);
-  last_probe_start = now;
+  vkprintf (1, "DC probes: starting probe round\n");
+  last_probe_start = now_mono;
 
   for (int i = 0; i < DC_PROBE_COUNT; i++) {
     if (probes[i].fd >= 0) {

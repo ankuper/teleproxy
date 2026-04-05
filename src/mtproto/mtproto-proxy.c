@@ -2623,9 +2623,6 @@ void cron (void) {
   compute_stats_sum ();
   check_special_connections_overflow ();
   check_all_conn_buffers ();
-  if (!slave_mode) {
-    dc_probes_cron ();
-  }
 }
 
 int sfd;
@@ -2843,6 +2840,7 @@ void mtfront_pre_loop (void) {
 void precise_cron (void) {
   update_local_stats ();
   if (!slave_mode) {
+    dc_probes_cron ();
     dc_probes_check ();
   }
 }
