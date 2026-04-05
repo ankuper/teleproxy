@@ -127,6 +127,7 @@ void dc_probes_cron (void) {
   if (last_probe_start && now - last_probe_start < probe_interval) {
     return;
   }
+  vkprintf (1, "DC probes: starting probe round (now=%d, last=%d)\n", now, last_probe_start);
   last_probe_start = now;
 
   for (int i = 0; i < DC_PROBE_COUNT; i++) {
