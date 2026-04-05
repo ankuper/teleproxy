@@ -11,19 +11,10 @@
 
 #include "common/common-stats.h"
 
-/* Initialize the DC probe subsystem.
+/* Initialize the DC probe subsystem and start the timer.
    interval_seconds > 0 enables probes; 0 disables.
-   Call once from master process after fork. */
+   Call once from master process after the engine is set up. */
 void dc_probes_init (int interval_seconds);
-
-/* Called from cron() every second.  Starts a new probe round
-   when the configured interval elapses. */
-void dc_probes_cron (void);
-
-/* Called from precise_cron() every event loop iteration.
-   Polls pending non-blocking connects.  No-op when no probes
-   are in flight. */
-void dc_probes_check (void);
 
 /* Append Prometheus histogram / counter / gauge lines to sb. */
 void dc_probes_write_prometheus (stats_buffer_t *sb);

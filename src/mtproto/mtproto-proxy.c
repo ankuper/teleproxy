@@ -2835,14 +2835,23 @@ void mtfront_pre_loop (void) {
     }
     // create_all_outbound_connections ();
   }
+
+  if (!slave_mode) {
+    int probe_iv = 0;
+    if (dc_probe_interval_from_cli >= 0) {
+      probe_iv = dc_probe_interval_from_cli;
+    } else if (toml_config_path && toml_cfg.dc_probe_interval >= 0) {
+      probe_iv = toml_cfg.dc_probe_interval;
+    }
+    dc_probes_init (probe_iv);
+    if (probe_iv > 0) {
+      vkprintf (0, "DC probes: interval %d seconds\n", probe_iv);
+    }
+  }
 }
 
 void precise_cron (void) {
   update_local_stats ();
-  if (!slave_mode) {
-    dc_probes_cron ();
-    dc_probes_check ();
-  }
 }
 
 static int mtfront_has_active_connections (void) {
@@ -3393,18 +3402,6 @@ void mtfront_pre_init (void) {
     }
   }
 
-  if (!slave_mode) {
-    int probe_iv = 0;
-    if (dc_probe_interval_from_cli >= 0) {
-      probe_iv = dc_probe_interval_from_cli;
-    } else if (toml_config_path && toml_cfg.dc_probe_interval >= 0) {
-      probe_iv = toml_cfg.dc_probe_interval;
-    }
-    dc_probes_init (probe_iv);
-    if (probe_iv > 0) {
-      vkprintf (0, "DC probes: interval %d seconds\n", probe_iv);
-    }
-  }
 }
 
 void mtfront_pre_start (void) {

@@ -17,6 +17,7 @@
 
 #include "common/platform.h"
 #include "common/common-stats.h"
+#include "jobs/jobs.h"
 #include "kprintf.h"
 #include "precise-time.h"
 #include "mtproto/mtproto-dc-table.h"
@@ -25,6 +26,7 @@
 #define DC_PROBE_COUNT     5
 #define HISTOGRAM_BUCKETS  11
 #define PROBE_TIMEOUT_SEC  10.0
+#define PROBE_CHECK_INTERVAL 0.1  /* check pending probes every 100ms */
 
 static const double bucket_bounds[HISTOGRAM_BUCKETS] = {
   0.005, 0.010, 0.025, 0.050, 0.100,
@@ -68,14 +70,12 @@ static void start_probe (int idx) {
   int dc_id = idx + 1;
   const struct dc_entry *dc = direct_dc_lookup (dc_id);
   if (!dc || dc->addr_count == 0 || dc->addrs[0].ipv4 == 0) {
-    fprintf (stderr, "DC probe: DC %d lookup failed (dc=%p)\n", dc_id, (void *)dc);
     histograms[idx].failures++;
     return;
   }
 
   int fd = socket (AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
   if (fd < 0) {
-    fprintf (stderr, "DC probe: DC %d socket failed: %s\n", dc_id, strerror (errno));
     histograms[idx].failures++;
     return;
   }
@@ -93,45 +93,24 @@ static void start_probe (int idx) {
   if (ret == 0) {
     double latency = get_utime_monotonic () - probes[idx].start_time;
     record_latency (idx, latency);
-    fprintf (stderr, "DC probe: DC %d immediate (%.1fms)\n", dc_id, latency * 1000);
+    vkprintf (1, "DC probe: DC %d immediate %.1fms\n", dc_id, latency * 1000);
     close (fd);
     probes[idx].fd = -1;
     return;
   }
   if (errno != EINPROGRESS) {
-    fprintf (stderr, "DC probe: DC %d connect err: %s\n", dc_id, strerror (errno));
+    vkprintf (1, "DC probe: DC %d connect: %m\n", dc_id);
     histograms[idx].failures++;
     close (fd);
     probes[idx].fd = -1;
     return;
   }
 
-  fprintf (stderr, "DC probe: DC %d in progress fd=%d\n", dc_id, fd);
   probes[idx].fd = fd;
   probes_pending++;
 }
 
-void dc_probes_init (int interval_seconds) {
-  probe_interval = interval_seconds;
-  last_probe_start = 0;
-  probes_pending = 0;
-  memset (histograms, 0, sizeof (histograms));
-  for (int i = 0; i < DC_PROBE_COUNT; i++) {
-    probes[i].fd = -1;
-  }
-}
-
-void dc_probes_cron (void) {
-  if (probe_interval <= 0) {
-    return;
-  }
-  double now_mono = get_utime_monotonic ();
-  if (last_probe_start > 0 && now_mono - last_probe_start < probe_interval) {
-    return;
-  }
-  vkprintf (1, "DC probes: starting probe round\n");
-  last_probe_start = now_mono;
-
+static void dc_probes_start_round (void) {
   for (int i = 0; i < DC_PROBE_COUNT; i++) {
     if (probes[i].fd >= 0) {
       /* Previous probe still in flight — count as timeout */
@@ -144,7 +123,7 @@ void dc_probes_cron (void) {
   }
 }
 
-void dc_probes_check (void) {
+static void dc_probes_poll (void) {
   if (probes_pending <= 0) {
     return;
   }
@@ -182,12 +161,44 @@ void dc_probes_check (void) {
     probes_pending--;
 
     if (err) {
-      fprintf (stderr, "DC probe: DC %d done err: %s\n", i + 1, strerror (err));
+      vkprintf (1, "DC probe: DC %d error: %s\n", i + 1, strerror (err));
       histograms[i].failures++;
     } else {
-      fprintf (stderr, "DC probe: DC %d done %.1fms\n", i + 1, latency * 1000);
+      vkprintf (1, "DC probe: DC %d %.1fms\n", i + 1, latency * 1000);
       record_latency (i, latency);
     }
+  }
+}
+
+/* Timer callback — runs on the main thread via job_timer_alloc.
+   Returns the next wakeup time. */
+static double dc_probes_timer (void *extra) {
+  double now_mono = get_utime_monotonic ();
+
+  /* Start a new probe round if interval elapsed */
+  if (last_probe_start <= 0 || now_mono - last_probe_start >= probe_interval) {
+    last_probe_start = now_mono;
+    dc_probes_start_round ();
+  }
+
+  /* Check pending probes */
+  dc_probes_poll ();
+
+  return precise_now + PROBE_CHECK_INTERVAL;
+}
+
+void dc_probes_init (int interval_seconds) {
+  probe_interval = interval_seconds;
+  last_probe_start = 0;
+  probes_pending = 0;
+  memset (histograms, 0, sizeof (histograms));
+  for (int i = 0; i < DC_PROBE_COUNT; i++) {
+    probes[i].fd = -1;
+  }
+
+  if (probe_interval > 0) {
+    job_t timer = job_timer_alloc (JC_MAIN, dc_probes_timer, NULL);
+    job_timer_insert (timer, 0.1);
   }
 }
 
