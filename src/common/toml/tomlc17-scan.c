@@ -1,6 +1,5 @@
-/*
- * Scanner section extracted from tomlc17.c.
- * All scanner logic for the TOML parser lives here.
+/* Copyright (c) 2024-2026, CK Tan.
+ * https://github.com/cktan/tomlc17/blob/main/LICENSE
  */
 #include "tomlc17-internal.h"
 

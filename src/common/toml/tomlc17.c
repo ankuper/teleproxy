@@ -7,6 +7,23 @@ const toml_datum_t DATUM_ZERO = {0};
 toml_option_t toml_option = {0, realloc, free};
 
 /*
+ *  Format an error into ebuf[]. Always return -1.
+ */
+int SETERROR(ebuf_t ebuf, int lineno, const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  char *p = ebuf.ptr;
+  char *q = p + ebuf.len;
+  if (lineno) {
+    snprintf(p, p < q ? q - p : 0, "(line %d) ", lineno);
+    p += strlen(p);
+  }
+  vsnprintf(p, p < q ? q - p : 0, fmt, args);
+  va_end(args);
+  return -1;
+}
+
+/*
  *  Memory pool. Allocated a big block once and hand out piecemeal.
  */
 typedef struct pool_t pool_t;

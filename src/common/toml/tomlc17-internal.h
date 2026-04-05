@@ -1,7 +1,6 @@
-/*
-    Internal header shared between tomlc17.c (parser) and tomlc17-scan.c (scanner).
-    Not for inclusion by other modules - use tomlc17.h for the public API.
-*/
+/* Copyright (c) 2024-2026, CK Tan.
+ * https://github.com/cktan/tomlc17/blob/main/LICENSE
+ */
 
 #pragma once
 
@@ -49,21 +48,7 @@ struct ebuf_t {
   int len;
 };
 
-static int SETERROR(ebuf_t ebuf, int lineno, const char *fmt, ...)
-    __attribute__((unused));
-static int SETERROR(ebuf_t ebuf, int lineno, const char *fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
-  char *p = ebuf.ptr;
-  char *q = p + ebuf.len;
-  if (lineno) {
-    snprintf(p, p < q ? q - p : 0, "(line %d) ", lineno);
-    p += strlen(p);
-  }
-  vsnprintf(p, p < q ? q - p : 0, fmt, args);
-  va_end(args);
-  return -1;
-}
+int SETERROR(ebuf_t ebuf, int lineno, const char *fmt, ...);
 
 /* This is a string view. */
 typedef struct span_t span_t;
