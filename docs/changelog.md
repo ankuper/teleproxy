@@ -6,13 +6,16 @@ description: "Release history for Teleproxy. Version details, new features, bug 
 
 ## Unreleased
 
-Graceful connection draining on secret removal ([#45](https://github.com/teleproxy/teleproxy/issues/45)).
+## 4.10.0
+
+Graceful connection draining on secret removal ([#45](https://github.com/teleproxy/teleproxy/issues/45)) and a brand-new signed RPM repository ([#21](https://github.com/teleproxy/teleproxy/issues/21)).
 
 - **Zero-downtime secret rotation** — removing a secret from `config.toml` and sending SIGHUP no longer drops the in-flight connections that were authenticated under it. The slot enters a "draining" state: new connections matching that secret are rejected, but existing ones keep working until they close on their own or `drain_timeout_secs` (default 300, `0` = infinite) elapses. Re-adding a draining secret revives the same slot — counters and IP tracking carry over.
 - New TOML option `drain_timeout_secs` (reloadable). Pinned `-S` CLI secrets are immutable across SIGHUP and never drain.
 - New stats: `secret_<lbl>_draining`, `secret_<lbl>_drain_age_seconds`, `secret_<lbl>_rejected_draining`, `secret_<lbl>_drain_forced`. Same fields exposed in Prometheus as `teleproxy_secret_draining`, `teleproxy_secret_drain_age_seconds`, `teleproxy_secret_rejected_draining_total`, `teleproxy_secret_drain_forced_total`.
 - Slot capacity expanded internally: 16 active secrets at a time as before, plus up to 16 additional draining slots.
 - Fixes a latent bug where the per-secret connection counter could go negative if a TLS connection was closed between the TLS handshake and the obfs2 init.
+- **Signed dnf repository** at <https://teleproxy.github.io/repo/> serving RHEL 9, RHEL 10, AlmaLinux, Rocky Linux, and Fedora 41/42 on x86_64 and aarch64. Install on any of these distros with `dnf install https://teleproxy.github.io/repo/teleproxy-release-latest.noarch.rpm && dnf install teleproxy && systemctl enable --now teleproxy`. Packages are signed with an RSA 4096 / SHA-512 key (RHEL 9 rpm-sequoia compatible). The first install generates a random secret in `/etc/teleproxy/config.toml`; subsequent `dnf upgrade` runs swap the binary and never touch user-edited config; `dnf remove` leaves the config file in place. Built automatically on each tag from the existing static linux binaries via [nfpm](https://nfpm.goreleaser.com/), driven by `repository_dispatch` from the release workflow into the new [teleproxy/repo](https://github.com/teleproxy/repo) repository.
 
 ## 4.9.0
 

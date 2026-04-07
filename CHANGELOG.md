@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [4.10.0]
+
 Graceful connection draining on secret removal (#45).
 
 - Removing a secret via SIGHUP reload no longer drops in-flight connections.
@@ -17,6 +19,17 @@ Graceful connection draining on secret removal (#45).
 - Slot capacity expanded to 16 active + up to 16 draining at any moment.
 - Fix latent bug where the per-secret connection counter could go negative
   if a TLS connection closed between handshake and obfs2 init.
+
+RPM repository (#21).
+
+- New signed dnf repository at https://teleproxy.github.io/repo/ serving
+  EL9, EL10, AlmaLinux, Rocky Linux, and Fedora 41/42 on x86_64 and aarch64.
+- One-line install: `dnf install https://teleproxy.github.io/repo/teleproxy-release-latest.noarch.rpm && dnf install teleproxy`.
+- Packages signed with RSA 4096 / SHA-512 (RHEL 9 rpm-sequoia compatible).
+- Built automatically from the existing static linux binaries via nfpm,
+  driven by `repository_dispatch` from the release workflow.
+- First install generates a random secret in `/etc/teleproxy/config.toml`;
+  upgrades and removals never touch a user-edited config.
 
 ## [4.9.0]
 
