@@ -1,6 +1,14 @@
 # Changelog
 
-## [Unreleased]
+## [4.11.0]
+
+SOCKS5 upstream support in check command (#57), Cloudflare Spectrum docs (#55).
+
+- `teleproxy check` now routes DC probes through the configured SOCKS5 proxy.
+  New `--socks5 URL` CLI flag; also reads from TOML config.
+- Handle buffer allocation failures gracefully instead of crashing (#58).
+- Fix PROXY protocol metrics always reporting 0 in multi-worker mode (#53).
+- New deployment guide: Cloudflare Spectrum.
 
 ## [4.10.0]
 

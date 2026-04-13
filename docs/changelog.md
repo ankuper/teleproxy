@@ -4,7 +4,14 @@ description: "Release history for Teleproxy. Version details, new features, bug 
 
 # Changelog
 
-## Unreleased
+## 4.11.0
+
+SOCKS5 upstream support in the check command ([#57](https://github.com/teleproxy/teleproxy/issues/57)) and a new Cloudflare Spectrum deployment guide ([#55](https://github.com/teleproxy/teleproxy/issues/55)).
+
+- **`teleproxy check` now routes DC probes through the configured SOCKS5 proxy** — new `--socks5 URL` CLI flag, also reads from the `socks5` field in TOML config. Useful for environments where the proxy itself sits behind a SOCKS5 upstream.
+- Handle buffer allocation failures gracefully instead of crashing ([#58](https://github.com/teleproxy/teleproxy/issues/58)). Under memory pressure, `rwm_alloc` and related functions could return NULL and trigger a segfault. Now they fail the connection cleanly.
+- Fix PROXY protocol metrics always reporting 0 in multi-worker mode ([#53](https://github.com/teleproxy/teleproxy/issues/53)). `teleproxy_proxy_protocol_connections_total` and `teleproxy_proxy_protocol_errors_total` were not aggregated from worker processes — the master read its own zero copy. Both the text stats and Prometheus endpoints now report correct values.
+- New [deployment guide](/deployment/cloudflare-spectrum/) for running behind Cloudflare Spectrum.
 
 ## 4.10.0
 
