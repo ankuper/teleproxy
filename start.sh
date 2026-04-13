@@ -115,8 +115,9 @@ PROXY_TAG=${PROXY_TAG:-}
 RANDOM_PADDING=${RANDOM_PADDING:-}
 # Domain or host:port for TLS-transport mode (e.g. google.com or 127.0.0.1:8443)
 EE_DOMAIN=${EE_DOMAIN:-}
-# Max connections - lower value avoids rlimit issues in containers
-MAX_CONNECTIONS=${MAX_CONNECTIONS:-60000}
+# Max connections per worker — keep modest for low-memory machines.
+# Raise via MAX_CONNECTIONS env var on high-memory servers (hard limit: 65536).
+MAX_CONNECTIONS=${MAX_CONNECTIONS:-10000}
 
 # Detect container-local IPv4 for NAT.
 LOCAL_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')

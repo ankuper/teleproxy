@@ -82,6 +82,7 @@ plugins:
             Cloudflare Spectrum: Cloudflare Spectrum
             Systemd: Systemd
             IPv6: IPv6
+            Tuning: Тюнинг
             Testing: Тестирование
             Changelog: Журнал изменений
             Observatory: Обсерватория
@@ -111,6 +112,7 @@ plugins:
             Cloudflare Spectrum: Cloudflare Spectrum
             Systemd: Systemd
             IPv6: IPv6
+            Tuning: تنظیم عملکرد
             Testing: تست
             Changelog: تاریخچه تغییرات
             Observatory: رصدخانه
@@ -140,6 +142,7 @@ plugins:
             Cloudflare Spectrum: Cloudflare Spectrum
             Systemd: Systemd
             IPv6: IPv6
+            Tuning: Tinh chỉnh
             Testing: Kiểm thử
             Changelog: Nhật ký thay đổi
             Observatory: Quan sát
@@ -187,6 +190,7 @@ nav:
   - Deployment:
     - Systemd: deployment/systemd.md
     - IPv6: deployment/ipv6.md
+    - Tuning: deployment/tuning.md
     - Cloudflare Spectrum: deployment/cloudflare-spectrum.md
     - Cloud Deploy: https://teleproxy.github.io/deploy/
   - Testing: testing.md
