@@ -194,6 +194,8 @@ static void update_local_stats_copy (struct worker_stats *S) {
   UPD (drs_delays_skipped);
   UPD (transport_errors_received);
   UPD (quickack_packets_received);
+  UPD (proxy_protocol_connections_total);
+  UPD (proxy_protocol_errors_total);
   { int _i; for (_i = 0; _i < EXT_SECRET_MAX_SLOTS; _i++) {
     UPD (per_secret_connections[_i]);
     UPD (per_secret_connections_created[_i]);
@@ -295,6 +297,8 @@ static inline void add_stats (struct worker_stats *W) {
   UPD (drs_delays_skipped);
   UPD (transport_errors_received);
   UPD (quickack_packets_received);
+  UPD (proxy_protocol_connections_total);
+  UPD (proxy_protocol_errors_total);
   { int _i; for (_i = 0; _i < EXT_SECRET_MAX_SLOTS; _i++) {
     UPD (per_secret_connections[_i]);
     UPD (per_secret_connections_created[_i]);
@@ -556,8 +560,8 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
 	     S(socks5_connects_succeeded),
 	     S(socks5_connects_failed),
 	     proxy_protocol_enabled,
-	     proxy_protocol_connections_total,
-	     proxy_protocol_errors_total,
+	     S(proxy_protocol_connections_total),
+	     S(proxy_protocol_errors_total),
 	     drs_delays_enabled,
 	     S(drs_delays_applied),
 	     S(drs_delays_skipped),
@@ -773,8 +777,8 @@ void mtfront_prepare_prometheus_stats (stats_buffer_t *sb) {
 	     S(socks5_connects_succeeded),
 	     S(socks5_connects_failed),
 	     proxy_protocol_enabled,
-	     proxy_protocol_connections_total,
-	     proxy_protocol_errors_total,
+	     S(proxy_protocol_connections_total),
+	     S(proxy_protocol_errors_total),
 	     S(drs_delays_applied),
 	     S(drs_delays_skipped),
 	     drs_delay_get_k (),

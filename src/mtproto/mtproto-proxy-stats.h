@@ -57,6 +57,9 @@ struct worker_stats {
   long long drs_delays_applied;
   long long drs_delays_skipped;
 
+  long long proxy_protocol_connections_total;
+  long long proxy_protocol_errors_total;
+
   long long transport_errors_received;
   long long quickack_packets_received;
 
