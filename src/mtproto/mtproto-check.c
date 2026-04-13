@@ -33,6 +33,224 @@
 #include "mtproto/mtproto-dc-table.h"
 #include "net/net-tls-parse.h"
 
+/* ── SOCKS5 upstream (blocking, for check command) ───────────────── */
+
+static int make_nonblocking_socket (int af, int type);
+
+static struct {
+  int enabled;
+  struct sockaddr_in addr;
+  char user[256];
+  char pass[256];
+} check_socks5;
+
+/* Parse socks5://[user:pass@]host:port into check_socks5.
+   Returns 0 on success, -1 on error. */
+static int check_socks5_parse (const char *url) {
+  memset (&check_socks5, 0, sizeof (check_socks5));
+
+  const char *p = url;
+  if (strncmp (p, "socks5h://", 10) == 0) {
+    p += 10;
+  } else if (strncmp (p, "socks5://", 9) == 0) {
+    p += 9;
+  } else {
+    return -1;
+  }
+
+  const char *at = strchr (p, '@');
+  if (at) {
+    const char *colon = memchr (p, ':', at - p);
+    if (!colon || colon == p) { return -1; }
+    int ulen = (int)(colon - p);
+    int plen = (int)(at - colon - 1);
+    if (ulen <= 0 || ulen > 255 || plen < 0 || plen > 255) { return -1; }
+    memcpy (check_socks5.user, p, ulen);
+    check_socks5.user[ulen] = '\0';
+    if (plen > 0) { memcpy (check_socks5.pass, colon + 1, plen); }
+    check_socks5.pass[plen] = '\0';
+    p = at + 1;
+  }
+
+  const char *colon = strrchr (p, ':');
+  if (!colon || colon == p) { return -1; }
+  int port = atoi (colon + 1);
+  if (port <= 0 || port > 65535) { return -1; }
+
+  char host[256];
+  int hlen = (int)(colon - p);
+  if (hlen <= 0 || hlen >= (int)sizeof (host)) { return -1; }
+  memcpy (host, p, hlen);
+  host[hlen] = '\0';
+
+  struct addrinfo hints = {.ai_family = AF_INET, .ai_socktype = SOCK_STREAM};
+  struct addrinfo *ai;
+  if (getaddrinfo (host, NULL, &hints, &ai) != 0) { return -1; }
+
+  check_socks5.addr.sin_family = AF_INET;
+  check_socks5.addr.sin_port = htons (port);
+  check_socks5.addr.sin_addr = ((struct sockaddr_in *)ai->ai_addr)->sin_addr;
+  freeaddrinfo (ai);
+  check_socks5.enabled = 1;
+  return 0;
+}
+
+/* Blocking send with timeout.  Returns 0 on success, -1 on error. */
+static int blocking_sendall (int fd, const void *buf, int len, int timeout_ms) {
+  const unsigned char *p = buf;
+  int remaining = len;
+  while (remaining > 0) {
+    fd_set wfds;
+    FD_ZERO (&wfds);
+    FD_SET (fd, &wfds);
+    struct timeval tv = {.tv_sec = timeout_ms / 1000,
+                         .tv_usec = (timeout_ms % 1000) * 1000};
+    int r = select (fd + 1, NULL, &wfds, NULL, &tv);
+    if (r <= 0) { return -1; }
+    ssize_t n = write (fd, p, remaining);
+    if (n <= 0) { return -1; }
+    p += n;
+    remaining -= (int)n;
+  }
+  return 0;
+}
+
+/* Blocking recv with timeout.  Returns 0 on success, -1 on error. */
+static int blocking_recvall (int fd, void *buf, int len, int timeout_ms) {
+  unsigned char *p = buf;
+  int remaining = len;
+  while (remaining > 0) {
+    fd_set rfds;
+    FD_ZERO (&rfds);
+    FD_SET (fd, &rfds);
+    struct timeval tv = {.tv_sec = timeout_ms / 1000,
+                         .tv_usec = (timeout_ms % 1000) * 1000};
+    int r = select (fd + 1, &rfds, NULL, NULL, &tv);
+    if (r <= 0) { return -1; }
+    ssize_t n = read (fd, p, remaining);
+    if (n <= 0) { return -1; }
+    p += n;
+    remaining -= (int)n;
+  }
+  return 0;
+}
+
+/* Connect to target DC through SOCKS5 proxy.
+   Returns elapsed ms on success, -1 on failure (errbuf filled). */
+static int timed_socks5_connect (const struct sockaddr *target_sa,
+                                 socklen_t target_sa_len __attribute__((unused)),
+                                 int target_af __attribute__((unused)),
+                                 int timeout_ms,
+                                 char *errbuf, int errlen) {
+  struct timeval before;
+  gettimeofday (&before, NULL);
+
+  /* Connect to the SOCKS5 proxy itself */
+  int fd = make_nonblocking_socket (AF_INET, SOCK_STREAM);
+  if (fd < 0) {
+    snprintf (errbuf, errlen, "socks5: socket: %s", strerror (errno));
+    return -1;
+  }
+
+  int ret = connect (fd, (struct sockaddr *)&check_socks5.addr,
+                     sizeof (check_socks5.addr));
+  if (ret != 0 && errno == EINPROGRESS) {
+    fd_set wfds;
+    FD_ZERO (&wfds);
+    FD_SET (fd, &wfds);
+    struct timeval tv = {.tv_sec = timeout_ms / 1000,
+                         .tv_usec = (timeout_ms % 1000) * 1000};
+    ret = select (fd + 1, NULL, &wfds, NULL, &tv);
+    if (ret <= 0) { close (fd); snprintf (errbuf, errlen, "socks5: connect timeout"); return -1; }
+    int err = 0; socklen_t elen = sizeof (err);
+    getsockopt (fd, SOL_SOCKET, SO_ERROR, &err, &elen);
+    if (err) { close (fd); snprintf (errbuf, errlen, "socks5: connect: %s", strerror (err)); return -1; }
+  } else if (ret != 0) {
+    int saved = errno; close (fd);
+    snprintf (errbuf, errlen, "socks5: connect: %s", strerror (saved));
+    return -1;
+  }
+
+  /* SOCKS5 greeting */
+  int has_auth = check_socks5.user[0] != '\0';
+  if (has_auth) {
+    unsigned char greet[] = {0x05, 0x02, 0x00, 0x02};
+    if (blocking_sendall (fd, greet, 4, timeout_ms) < 0) {
+      close (fd); snprintf (errbuf, errlen, "socks5: greeting send failed"); return -1;
+    }
+  } else {
+    unsigned char greet[] = {0x05, 0x01, 0x00};
+    if (blocking_sendall (fd, greet, 3, timeout_ms) < 0) {
+      close (fd); snprintf (errbuf, errlen, "socks5: greeting send failed"); return -1;
+    }
+  }
+
+  unsigned char resp[2];
+  if (blocking_recvall (fd, resp, 2, timeout_ms) < 0) {
+    close (fd); snprintf (errbuf, errlen, "socks5: greeting recv failed"); return -1;
+  }
+  if (resp[0] != 0x05) {
+    close (fd); snprintf (errbuf, errlen, "socks5: bad version %d", resp[0]); return -1;
+  }
+
+  if (resp[1] == 0x02) {
+    /* Username/password auth (RFC 1929) */
+    if (!has_auth) {
+      close (fd); snprintf (errbuf, errlen, "socks5: server requires auth"); return -1;
+    }
+    int ulen = (int)strlen (check_socks5.user);
+    int plen = (int)strlen (check_socks5.pass);
+    unsigned char auth[515];
+    auth[0] = 0x01;
+    auth[1] = (unsigned char)ulen;
+    memcpy (auth + 2, check_socks5.user, ulen);
+    auth[2 + ulen] = (unsigned char)plen;
+    memcpy (auth + 3 + ulen, check_socks5.pass, plen);
+    if (blocking_sendall (fd, auth, 3 + ulen + plen, timeout_ms) < 0) {
+      close (fd); snprintf (errbuf, errlen, "socks5: auth send failed"); return -1;
+    }
+    unsigned char aresp[2];
+    if (blocking_recvall (fd, aresp, 2, timeout_ms) < 0) {
+      close (fd); snprintf (errbuf, errlen, "socks5: auth recv failed"); return -1;
+    }
+    if (aresp[1] != 0x00) {
+      close (fd); snprintf (errbuf, errlen, "socks5: auth rejected"); return -1;
+    }
+  } else if (resp[1] != 0x00) {
+    close (fd); snprintf (errbuf, errlen, "socks5: no acceptable auth (0x%02x)", resp[1]); return -1;
+  }
+
+  /* SOCKS5 CONNECT */
+  const struct sockaddr_in *sa4 = (const struct sockaddr_in *)target_sa;
+  unsigned char conn[10];
+  conn[0] = 0x05;  /* version */
+  conn[1] = 0x01;  /* CONNECT */
+  conn[2] = 0x00;  /* reserved */
+  conn[3] = 0x01;  /* ATYP: IPv4 */
+  memcpy (conn + 4, &sa4->sin_addr, 4);
+  conn[8] = (unsigned char)(ntohs (sa4->sin_port) >> 8);
+  conn[9] = (unsigned char)(ntohs (sa4->sin_port) & 0xff);
+  if (blocking_sendall (fd, conn, 10, timeout_ms) < 0) {
+    close (fd); snprintf (errbuf, errlen, "socks5: CONNECT send failed"); return -1;
+  }
+
+  /* Read CONNECT response: 4 header + variable addr + 2 port */
+  unsigned char cresp[10];
+  if (blocking_recvall (fd, cresp, 10, timeout_ms) < 0) {
+    close (fd); snprintf (errbuf, errlen, "socks5: CONNECT recv failed"); return -1;
+  }
+  if (cresp[1] != 0x00) {
+    close (fd); snprintf (errbuf, errlen, "socks5: CONNECT failed (0x%02x)", cresp[1]); return -1;
+  }
+
+  struct timeval after;
+  gettimeofday (&after, NULL);
+  int ms = (int)((after.tv_sec - before.tv_sec) * 1000 +
+                 (after.tv_usec - before.tv_usec) / 1000);
+  close (fd);
+  return ms;
+}
+
 /* ── result tracking ──────────────────────────────────────────────── */
 
 enum check_status { CHECK_PASS, CHECK_WARN, CHECK_FAIL, CHECK_SKIP };
@@ -164,6 +382,13 @@ static void check_config (struct check_context *ctx) {
                   ctx->secret_count, ctx->secret_count == 1 ? "" : "s",
                   ctx->domain_count, ctx->domain_count == 1 ? "" : "s");
   }
+  if (check_socks5.enabled) {
+    char ip[INET_ADDRSTRLEN];
+    inet_ntop (AF_INET, &check_socks5.addr.sin_addr, ip, sizeof (ip));
+    check_record (ctx, CHECK_PASS, "SOCKS5 Proxy",
+                  "%s:%d%s", ip, ntohs (check_socks5.addr.sin_port),
+                  check_socks5.user[0] ? " (auth)" : "");
+  }
 }
 
 /* ── check: DC connectivity ───────────────────────────────────────── */
@@ -214,12 +439,19 @@ static void check_dc (struct check_context *ctx, int dc_id) {
   snprintf (label, sizeof (label), "DC %d (%s)", dc_id, ip_str);
 
   char errbuf[128];
-  int ms = timed_tcp_connect ((struct sockaddr *)&ss, ss_len, af, 5000,
-                              errbuf, sizeof (errbuf));
+  int ms;
+  if (check_socks5.enabled) {
+    ms = timed_socks5_connect ((struct sockaddr *)&ss, ss_len, af, 5000,
+                               errbuf, sizeof (errbuf));
+  } else {
+    ms = timed_tcp_connect ((struct sockaddr *)&ss, ss_len, af, 5000,
+                            errbuf, sizeof (errbuf));
+  }
   if (ms < 0) {
     check_record (ctx, CHECK_FAIL, label, "%s", errbuf);
   } else {
-    check_record (ctx, CHECK_PASS, label, "%dms", ms);
+    check_record (ctx, CHECK_PASS, label, "%dms%s", ms,
+                  check_socks5.enabled ? " (via socks5)" : "");
   }
 }
 
@@ -776,6 +1008,8 @@ static void check_usage (void) {
     "  -S, --secret SECRET    32-char hex secret (repeatable)\n"
     "  -D, --domain DOMAIN    TLS domain[:port] (repeatable)\n"
     "  --dc-override DC:H:P   Override DC address (repeatable)\n"
+    "  --socks5 URL           Route DC probes through SOCKS5 proxy\n"
+    "                         (socks5://[user:pass@]host:port)\n"
   );
 }
 
@@ -813,12 +1047,15 @@ int cmd_check (int argc, char *argv[]) {
   toml_cfg.random_padding_only = -1;
   toml_cfg.ipv6 = -1;
 
+  const char *socks5_url = NULL;
+
   static struct option long_opts[] = {
     {"config",      required_argument, 0, 'c'},
     {"direct",      no_argument,       0, 'd'},
     {"secret",      required_argument, 0, 'S'},
     {"domain",      required_argument, 0, 'D'},
     {"dc-override", required_argument, 0, 'O'},
+    {"socks5",      required_argument, 0, 'X'},
     {"help",        no_argument,       0, 'h'},
     {0, 0, 0, 0}
   };
@@ -888,6 +1125,9 @@ int cmd_check (int argc, char *argv[]) {
       }
       break;
     }
+    case 'X':
+      socks5_url = optarg;
+      break;
     case 'h':
       check_usage ();
       return 0;
@@ -924,6 +1164,17 @@ int cmd_check (int argc, char *argv[]) {
       direct_dc_override (toml_cfg.dc_overrides[i].dc_id,
                           toml_cfg.dc_overrides[i].host,
                           toml_cfg.dc_overrides[i].port);
+    }
+    /* SOCKS5: CLI overrides TOML */
+    if (!socks5_url && toml_cfg.socks5[0]) {
+      socks5_url = toml_cfg.socks5;
+    }
+  }
+
+  if (socks5_url) {
+    if (check_socks5_parse (socks5_url) < 0) {
+      fprintf (stderr, "error: invalid --socks5 URL '%s'\n", socks5_url);
+      return 2;
     }
   }
 
