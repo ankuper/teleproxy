@@ -79,6 +79,7 @@ plugins:
             SOCKS5 Upstream Proxy: SOCKS5 прокси
             Deployment: Развёртывание
             Cloud Deploy: Облачное развёртывание
+            Cloudflare Spectrum: Cloudflare Spectrum
             Systemd: Systemd
             IPv6: IPv6
             Testing: Тестирование
@@ -107,6 +108,7 @@ plugins:
             SOCKS5 Upstream Proxy: پروکسی SOCKS5
             Deployment: استقرار
             Cloud Deploy: استقرار ابری
+            Cloudflare Spectrum: Cloudflare Spectrum
             Systemd: Systemd
             IPv6: IPv6
             Testing: تست
@@ -135,6 +137,7 @@ plugins:
             SOCKS5 Upstream Proxy: Proxy SOCKS5
             Deployment: Triển khai
             Cloud Deploy: Triển khai đám mây
+            Cloudflare Spectrum: Cloudflare Spectrum
             Systemd: Systemd
             IPv6: IPv6
             Testing: Kiểm thử
@@ -184,6 +187,7 @@ nav:
   - Deployment:
     - Systemd: deployment/systemd.md
     - IPv6: deployment/ipv6.md
+    - Cloudflare Spectrum: deployment/cloudflare-spectrum.md
     - Cloud Deploy: https://teleproxy.github.io/deploy/
   - Testing: testing.md
   - Changelog: changelog.md
