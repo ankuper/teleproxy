@@ -25,6 +25,7 @@ tests/create_session.py
 .venv/
 .claude/
 .playwright-mcp/
+.playwright-cli/
 
 # Python cache
 __pycache__/
