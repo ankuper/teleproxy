@@ -15,11 +15,11 @@
       }
     ]
   },
-  "description": "Connections, per-secret usage, rejection rates, DC connectivity, and resource utilization for Teleproxy MTProxy.\n\nEdited by PentiumB to add sorting by instance.",
+  "description": "Per-instance view. Connections, per-secret usage, rejection rates, DC connectivity, and resource utilization for Teleproxy MTProxy, filtered by the $instance Prometheus label.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "id": 30,
+  "id": null,
   "links": [],
   "panels": [
     {
@@ -2915,12 +2915,11 @@
   "templating": {
     "list": [
       {
-        "current": {
-          "text": "prometheus",
-          "value": "ffdfqka58g6bkf"
-        },
+        "current": {},
+        "hide": 0,
         "includeAll": false,
         "label": "Data source",
+        "multi": false,
         "name": "datasource",
         "options": [],
         "query": "prometheus",
@@ -2929,13 +2928,15 @@
       },
       {
         "allowCustomValue": false,
-        "current": {
-          "text": "212.34.145.87",
-          "value": "212.34.145.87"
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "$datasource"
         },
         "definition": "label_values(teleproxy_active_connections,instance)",
         "includeAll": false,
         "label": "instance",
+        "multi": false,
         "name": "instance",
         "options": [],
         "query": {
@@ -2955,7 +2956,7 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Teleproxy(instance)",
-  "uid": "teleproxy",
-  "version": 2
+  "title": "Teleproxy (per instance)",
+  "uid": "teleproxy-instance",
+  "version": 1
 }
