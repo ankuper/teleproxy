@@ -35,6 +35,7 @@
 #include "net/net-msg-buffers.h"
 #include "crypto/aesni256.h"
 #include "net/net-crypto-aes.h"
+#include "net/net-websocket.h"
 #include "kprintf.h"
 
 
@@ -252,7 +253,17 @@ int cpu_tcp_aes_crypto_ctr128_encrypt_output (connection_job_t C) /* {{{ */ {
 
   while (c->out.total_bytes) {
     int len = c->out.total_bytes;
-    if (c->flags & C_IS_TLS) {
+    if (c->ws_state == WS_STATE_ACTIVE) {
+      // Type3 WS transport: wrap outgoing (server→client) payloads in
+      // unmasked RFC 6455 binary frames. Cap at 16 KiB for parity with
+      // typical middlebox-friendly frame sizes.
+      const int WS_MAX_FRAME = 16384;
+      if (len > WS_MAX_FRAME) {
+        len = WS_MAX_FRAME;
+      }
+      ws_write_frame_header (&c->out_p, len);
+      vkprintf (2, "WS_OUTPUT: send binary frame len=%d\n", len);
+    } else if (c->flags & C_IS_TLS) {
       assert (c->left_tls_packet_length >= 0);
       const int MAX_PACKET_LENGTH = 1425;
       if (MAX_PACKET_LENGTH < len) {
@@ -282,7 +293,47 @@ int cpu_tcp_aes_crypto_ctr128_decrypt_input (connection_job_t C) /* {{{ */ {
 
   while (c->in_u.total_bytes) {
     int len = c->in_u.total_bytes;
-    if (c->flags & C_IS_TLS) {
+    if (c->ws_state == WS_STATE_ACTIVE) {
+      // Type3 WS transport: unwrap incoming (client→server, masked) frames.
+      // Each frame is: [2..14 byte header] [masked payload]. Parse header
+      // once per frame, then unmask and pass payload through the AES-CTR
+      // decryptor in fixed-size chunks of up to 16 KiB (stack buffer).
+      if (c->ws_frame_remaining == 0) {
+        int payload_len = ws_parse_frame_header (c, &c->in_u);
+        if (payload_len < 0) {
+          vkprintf (1, "WS frame parse error\n");
+          fail_connection (C, -1);
+          return 0;
+        }
+        if (payload_len == 0) {
+          return 0; // need more data to parse the next frame header
+        }
+        len = c->in_u.total_bytes;
+      }
+
+      if (c->ws_frame_remaining < len) {
+        len = c->ws_frame_remaining;
+      }
+      c->ws_frame_remaining -= len;
+
+      if (len > 0) {
+        unsigned char stack_buf[16384];
+        unsigned char *tmp = (len <= (int)sizeof(stack_buf)) ? stack_buf : malloc (len);
+        assert (rwm_fetch_data (&c->in_u, tmp, len) == len);
+        ws_unmask_data (c, tmp, len);
+        struct raw_message tmp_msg;
+        rwm_create (&tmp_msg, tmp, len);
+        int r = rwm_encrypt_decrypt_to (&tmp_msg, &c->in, len, T->read_aeskey, 1);
+        rwm_free (&tmp_msg);
+        if (tmp != stack_buf) free (tmp);
+        if (r != len) {
+          fail_connection (C, -1);
+          return -1;
+        }
+        vkprintf (2, "WS_INPUT: decrypted %d bytes, %d remaining in frame\n", len, c->ws_frame_remaining);
+      }
+      continue;
+    } else if (c->flags & C_IS_TLS) {
       assert (c->left_tls_packet_length >= 0);
       if (c->left_tls_packet_length == 0) {
         if (len < 5) {
