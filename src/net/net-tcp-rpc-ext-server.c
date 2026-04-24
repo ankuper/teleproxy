@@ -53,6 +53,7 @@
 #include "net/net-tcp-direct-dc.h"
 #include "net/net-obfs2-parse.h"
 #include "net/net-proxy-protocol.h"
+#include "net/net-websocket.h"
 #include "net/net-tls-parse.h"
 #include "net/net-ip-acl.h"
 #include "net/net-thread.h"
@@ -1352,6 +1353,11 @@ int tcp_rpcs_ext_init_accepted (connection_job_t C) {
   if (proxy_protocol_enabled) {
     CONN_INFO(C)->flags |= C_PROXY_PROTOCOL;
   }
+  // Type3 WS transport: start in handshake-probe mode. If first bytes are
+  // an HTTP GET with Upgrade: websocket, we enter WS flow; otherwise the
+  // probe fails quickly (r<0) and we fall back to the existing fake-TLS /
+  // obfuscated2 stack with no observable cost.
+  CONN_INFO(C)->ws_state = WS_STATE_HANDSHAKE;
   job_timer_insert (C, precise_now + 10);
   return tcp_rpcs_init_accepted_nohs (C);
 }
@@ -1374,6 +1380,106 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
   vkprintf (4, "%s. in_total_bytes = %d\n", __func__, c->in.total_bytes);
 
   while (1) {
+    // === Type3 WebSocket handshake probe ===
+    // On fresh connection, ws_state == WS_STATE_HANDSHAKE. We try to parse
+    // an HTTP GET + Upgrade: websocket request. If it matches, we reply 101
+    // Switching Protocols and switch to WS_STATE_ACTIVE (all subsequent
+    // traffic is RFC 6455 frames). If it doesn't match (r < 0), we fall
+    // back to WS_STATE_NONE and the existing fake-TLS / obfuscated2 path
+    // handles the bytes normally. If we need more data (r == 0), return.
+    if (c->ws_state == WS_STATE_HANDSHAKE) {
+      vkprintf(3, "WS_STATE: processing handshake, bytes=%d\n", c->in.total_bytes);
+      char ws_key[128] = {0};
+      char ws_path[256] = {0};
+      int r = ws_parse_upgrade_request (&c->in, ws_key, sizeof(ws_key), ws_path, sizeof(ws_path));
+      if (r == 0) {
+        return NEED_MORE_BYTES;
+      }
+      if (r < 0) {
+        vkprintf(2, "WS_STATE: not a WS upgrade, falling back to standard parsing\n");
+        c->ws_state = WS_STATE_NONE;
+      } else {
+        vkprintf (1, "WebSocket upgrade from %s:%d path=%s\n", show_remote_ip (C), c->remote_port, ws_path);
+        char accept_key[64];
+        if (ws_compute_accept_key (ws_key, accept_key, sizeof(accept_key)) < 0) {
+          vkprintf (0, "WS_STATE: failed to compute accept key\n");
+          fail_connection (C, -1);
+          return 0;
+        }
+        char response[512];
+        int resp_len = ws_build_upgrade_response (accept_key, response, sizeof(response));
+
+        // Consume the HTTP request up to and including the \r\n\r\n terminator.
+        int total = c->in.total_bytes;
+        int peek_len = total < 4096 ? total : 4096;
+        unsigned char peek_buf[peek_len];
+        assert (rwm_fetch_lookup (&c->in, peek_buf, peek_len) == peek_len);
+        char *end = strstr ((char *)peek_buf, "\r\n\r\n");
+        int consume = end ? (int)(end - (char *)peek_buf) + 4 : peek_len;
+        assert (rwm_skip_data (&c->in, consume) == consume);
+
+        // Send 101 directly to c->out; flush via C_WANTWR.
+        rwm_push_data (&c->out, response, resp_len);
+        __sync_fetch_and_or (&c->flags, C_WANTWR);
+        job_signal (JOB_REF_CREATE_PASS (C), JS_RUN);
+
+        c->ws_state = WS_STATE_ACTIVE;
+        vkprintf (1, "WS_STATE: upgraded, now active. Sent bytes=%d\n", resp_len);
+
+        if (!c->in.total_bytes) {
+          return NEED_MORE_BYTES;
+        }
+      }
+    }
+
+    // === Type3 WebSocket active: pre-crypto frame unwrap ===
+    // Before the obfuscated2 crypto is initialized, incoming bytes are WS
+    // frames. We drain them into an unmasked buffer that replaces c->in,
+    // so the regular MTProto detection/init code below sees plaintext
+    // obfuscated2. Once c->crypto is set, further unwrapping moves into
+    // cpu_tcp_aes_crypto_ctr128_decrypt_input (net-tcp-connections.c).
+    if (c->ws_state == WS_STATE_ACTIVE && !c->crypto) {
+      vkprintf (3, "WS_ACTIVE: pre-crypto, in.total_bytes=%d, ws_frame_remaining=%d\n", c->in.total_bytes, c->ws_frame_remaining);
+
+      struct raw_message unmasked;
+      rwm_init (&unmasked, 0);
+
+      while (c->in.total_bytes > 0) {
+        if (c->ws_frame_remaining == 0) {
+          int payload_len = ws_parse_frame_header (c, &c->in);
+          vkprintf (3, "WS_ACTIVE: ws_parse_frame_header returned %d\n", payload_len);
+          if (payload_len <= 0) {
+            break;
+          }
+        }
+        int avail = c->in.total_bytes;
+        int to_read = avail < c->ws_frame_remaining ? avail : c->ws_frame_remaining;
+        if (to_read <= 0) break;
+
+        unsigned char stack_buf[16384];
+        unsigned char *tmp = (to_read <= (int)sizeof(stack_buf)) ? stack_buf : malloc (to_read);
+        assert (rwm_fetch_data (&c->in, tmp, to_read) == to_read);
+        ws_unmask_data (c, tmp, to_read);
+        rwm_push_data (&unmasked, tmp, to_read);
+        if (tmp != stack_buf) free (tmp);
+        c->ws_frame_remaining -= to_read;
+      }
+
+      if (unmasked.total_bytes > 0) {
+        rwm_union (&unmasked, &c->in);
+        c->in = unmasked;
+      } else {
+        rwm_free (&unmasked);
+      }
+
+      vkprintf (3, "WS_ACTIVE: after unwrap, in.total_bytes=%d, ws_frame_remaining=%d\n", c->in.total_bytes, c->ws_frame_remaining);
+
+      if (c->in.total_bytes == 0) {
+        return NEED_MORE_BYTES;
+      }
+      // Fall through to normal MTProto detection with plaintext obfuscated2 in c->in
+    }
+
     if (D->in_packet_num != -3) {
       job_timer_remove (C);
     }
@@ -1383,7 +1489,7 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
     if (c->flags & C_STOPPARSE) {
       return NEED_MORE_BYTES;
     }
-    len = c->in.total_bytes; 
+    len = c->in.total_bytes;
     if (len <= 0) {
       return NEED_MORE_BYTES;
     }
