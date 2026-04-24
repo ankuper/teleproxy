@@ -254,6 +254,14 @@ struct connection_info {
   int window_clamp;
   int left_tls_packet_length;
 
+  // WebSocket state (Type3 transport: RFC 6455 frames behind nginx/CF edge).
+  // Inactive and zero-cost for non-WS connections (ws_state==0).
+  int ws_state;              // 0=not WS, 1=handshake pending, 2=active
+  int ws_frame_remaining;    // bytes remaining in current WS frame payload
+  unsigned char ws_mask[4];  // current frame masking key (client→server)
+  int ws_mask_offset;        // current offset into mask rotation
+  int ws_frame_header_state; // partial header parse state
+
   struct raw_message in_u, in, out, out_p;
 
   struct mp_queue *in_queue;
