@@ -198,6 +198,19 @@ test:
 	timeout 1200s docker compose -f tests/docker-compose.test.yml up --build --exit-code-from tester || \
 		(echo "Test timed out or failed"; docker compose -f tests/docker-compose.test.yml down; exit 1)
 
+test-websocket:
+	@if [ -z "$$TELEPROXY_SECRET" ]; then \
+		export TELEPROXY_SECRET=$$(head -c 16 /dev/urandom | xxd -ps); \
+		echo "Generated TELEPROXY_SECRET: $$TELEPROXY_SECRET"; \
+	fi && \
+	export TELEPROXY_SECRET=$${TELEPROXY_SECRET:-$$(head -c 16 /dev/urandom | xxd -ps)} && \
+	echo "Using secret: $$TELEPROXY_SECRET" && \
+	timeout 300s docker compose -f tests/docker-compose.websocket-test.yml up --build --exit-code-from tester || \
+		(echo "WebSocket test timed out or failed"; \
+		docker compose -f tests/docker-compose.websocket-test.yml logs teleproxy; \
+		docker compose -f tests/docker-compose.websocket-test.yml down; exit 1)
+	docker compose -f tests/docker-compose.websocket-test.yml down
+
 test-tls:
 	@if [ -z "$$TELEPROXY_SECRET" ]; then \
 		export TELEPROXY_SECRET=$$(head -c 16 /dev/urandom | xxd -ps); \

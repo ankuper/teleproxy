@@ -1,0 +1,38 @@
+services:
+  teleproxy:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        DEBUG_TOOLS: "1"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    environment:
+      - SECRET=${TELEPROXY_SECRET:-d41d8cd98f00b204e9800998ecf8427e}
+      - PORT=8443
+      - STATS_PORT=8888
+      - DIRECT_MODE=true
+      - WORKERS=0
+    # -H 3129 adds a plaintext HTTP listener where nginx (or CF Worker) is
+    # expected to terminate TLS externally and proxy_pass HTTP/WS upstream
+    # to teleproxy. Every connection accepted here starts in WS_STATE_HANDSHAKE;
+    # a successful HTTP GET + Upgrade: websocket flips it to WS_STATE_ACTIVE.
+    command: ["-H", "3129"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8888/stats || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+  tester:
+    build: .
+    environment:
+      - TELEPROXY_HOST=teleproxy
+      - TELEPROXY_WS_PORT=3129
+      - TELEPROXY_SECRET=${TELEPROXY_SECRET:-d41d8cd98f00b204e9800998ecf8427e}
+    depends_on:
+      teleproxy:
+        condition: service_healthy
+    command: ["python", "test_websocket.py"]
