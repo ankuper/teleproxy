@@ -179,6 +179,7 @@ nav:
   - Features:
     - DPI Resistance: features/dpi-resistance.md
     - Fake-TLS (EE Mode): features/fake-tls.md
+    - WebSocket Transport: features/websocket-transport.md
     - Direct-to-DC Mode: features/direct-mode.md
     - IP Access Control: features/access-control.md
     - Secrets & Limits: features/secrets.md
@@ -192,6 +193,7 @@ nav:
     - IPv6: deployment/ipv6.md
     - Tuning: deployment/tuning.md
     - Cloudflare Spectrum: deployment/cloudflare-spectrum.md
+    - WebSocket (Type3): deployment/websocket.md
     - Cloud Deploy: https://teleproxy.github.io/deploy/
   - Testing: testing.md
   - Changelog: changelog.md
