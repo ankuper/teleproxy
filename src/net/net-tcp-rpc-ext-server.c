@@ -1877,9 +1877,22 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
               D->flags |= RPC_F_COMPACT | RPC_F_EXTMODE2;
               break;
           }
-          if (c->type->crypto_decrypt_input (C) < 0) {
-            fail_connection (C, -1);
-            return 0;
+          /* Data in c->in_u was already WS-unwrapped by the pre-crypto
+             path (lines ~1441-1481).  crypto_decrypt_input must NOT
+             re-parse it as raw WS frames — that would read MTProto
+             bytes as frame headers and compute garbage lengths
+             (assertion: bytes >= 0 in rwm_process_ex).  Temporarily
+             disable ws_state so the decrypt path skips WS unwrapping
+             for this initial buffer. */
+          {
+            int saved_ws = c->ws_state;
+            c->ws_state = WS_STATE_NONE;
+            int dec_rc = c->type->crypto_decrypt_input (C);
+            c->ws_state = saved_ws;
+            if (dec_rc < 0) {
+              fail_connection (C, -1);
+              return 0;
+            }
           }
 
           D->extra_int4 = pr.dc;
