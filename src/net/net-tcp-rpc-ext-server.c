@@ -1795,7 +1795,7 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
         return 11; // waiting for dummy ChangeCipherSpec and first packet
       }
 
-      if (allow_only_tls && !(c->flags & C_IS_TLS)) {
+      if (allow_only_tls && !(c->flags & C_IS_TLS) && c->ws_state != WS_STATE_ACTIVE) {
         vkprintf (1, "Expected TLS-transport\n");
         RETURN_TLS_ERROR(default_domain_info);
       }
