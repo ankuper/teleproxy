@@ -49,6 +49,10 @@ struct worker_stats {
   long long direct_dc_connections_failed, direct_dc_connections_dc_closed;
   long long direct_dc_retries;
   long long socks5_connects_attempted, socks5_connects_succeeded, socks5_connects_failed;
+  long long socks5_connect_tunnels_active;
+  long long socks5_connect_tunnels_total;
+  long long socks5_connect_tunnels_bytes_up;
+  long long socks5_connect_tunnels_bytes_down;
 
   long long connections_failed_lru, connections_failed_flood;
 

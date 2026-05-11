@@ -55,6 +55,11 @@ endif
 COMMON_CFLAGS += $(EXTRA_CFLAGS)
 COMMON_LDFLAGS += $(EXTRA_LDFLAGS)
 
+# Story 9-1: server-side SOCKS5/CONNECT tunnel (dogfood, default OFF).
+# Enable for the shim-capable dogfood image: make T3_SERVER_SOCKS5_CONNECT=1
+T3_SERVER_SOCKS5_CONNECT ?= 0
+COMMON_CFLAGS += -DT3_SERVER_SOCKS5_CONNECT=$(T3_SERVER_SOCKS5_CONNECT)
+
 # Architecture-specific CFLAGS
 ifeq ($(HOST_ARCH), x86_64)
 CFLAGS := $(COMMON_CFLAGS) -mpclmul -march=core2 -mfpmath=sse -mssse3 $(BITNESS_FLAGS)
@@ -85,7 +90,7 @@ EXELIST	:= ${EXE}/teleproxy
 
 
 OBJECTS	=	\
-  ${OBJ}/src/mtproto/mtproto-proxy.o ${OBJ}/src/mtproto/mtproto-proxy-stats.o ${OBJ}/src/mtproto/mtproto-proxy-http.o ${OBJ}/src/mtproto/mtproto-config.o ${OBJ}/src/mtproto/mtproto-dc-table.o ${OBJ}/src/mtproto/mtproto-dc-probes.o ${OBJ}/src/mtproto/mtproto-check.o ${OBJ}/src/mtproto/mtproto-link.o ${OBJ}/src/net/net-tcp-rpc-ext-server.o ${OBJ}/src/net/net-tcp-rpc-ext-drain.o ${OBJ}/src/net/net-tcp-rpc-ext-top-ips.o ${OBJ}/src/net/net-tcp-rpc-ext-uniq-bloom.o ${OBJ}/src/net/net-tcp-rpc-ext-domain.o ${OBJ}/src/net/net-ja4.o ${OBJ}/src/net/net-tcp-direct-dc.o
+  ${OBJ}/src/mtproto/mtproto-proxy.o ${OBJ}/src/mtproto/mtproto-proxy-stats.o ${OBJ}/src/mtproto/mtproto-proxy-http.o ${OBJ}/src/mtproto/mtproto-config.o ${OBJ}/src/mtproto/mtproto-dc-table.o ${OBJ}/src/mtproto/mtproto-dc-probes.o ${OBJ}/src/mtproto/mtproto-check.o ${OBJ}/src/mtproto/mtproto-link.o ${OBJ}/src/net/net-tcp-rpc-ext-server.o ${OBJ}/src/net/net-tcp-rpc-ext-drain.o ${OBJ}/src/net/net-tcp-rpc-ext-top-ips.o ${OBJ}/src/net/net-tcp-rpc-ext-uniq-bloom.o ${OBJ}/src/net/net-tcp-rpc-ext-domain.o ${OBJ}/src/net/net-ja4.o ${OBJ}/src/net/net-tcp-direct-dc.o ${OBJ}/src/net/net-socks5-tunnel.o
 
 DEPENDENCE_CXX		:=	$(subst ${OBJ}/,${DEP}/,$(patsubst %.o,%.d,${OBJECTS_CXX}))
 DEPENDENCE_STRANGE	:=	$(subst ${OBJ}/,${DEP}/,$(patsubst %.o,%.d,${OBJECTS_STRANGE}))
@@ -146,7 +151,7 @@ ${LIB_OBJS_NORMAL}: ${OBJ}/%.o: %.c | create_dirs_and_headers
 
 ${EXELIST}: ${LIBLIST}
 
-${EXE}/teleproxy:	${OBJ}/src/mtproto/mtproto-proxy.o ${OBJ}/src/mtproto/mtproto-proxy-stats.o ${OBJ}/src/mtproto/mtproto-proxy-http.o ${OBJ}/src/mtproto/mtproto-config.o ${OBJ}/src/mtproto/mtproto-dc-table.o ${OBJ}/src/mtproto/mtproto-dc-probes.o ${OBJ}/src/mtproto/mtproto-check.o ${OBJ}/src/mtproto/mtproto-link.o ${OBJ}/src/net/net-tcp-rpc-ext-server.o ${OBJ}/src/net/net-tcp-rpc-ext-drain.o ${OBJ}/src/net/net-tcp-rpc-ext-top-ips.o ${OBJ}/src/net/net-tcp-rpc-ext-uniq-bloom.o ${OBJ}/src/net/net-tcp-rpc-ext-domain.o ${OBJ}/src/net/net-ja4.o ${OBJ}/src/net/net-tcp-direct-dc.o
+${EXE}/teleproxy:	${OBJ}/src/mtproto/mtproto-proxy.o ${OBJ}/src/mtproto/mtproto-proxy-stats.o ${OBJ}/src/mtproto/mtproto-proxy-http.o ${OBJ}/src/mtproto/mtproto-config.o ${OBJ}/src/mtproto/mtproto-dc-table.o ${OBJ}/src/mtproto/mtproto-dc-probes.o ${OBJ}/src/mtproto/mtproto-check.o ${OBJ}/src/mtproto/mtproto-link.o ${OBJ}/src/net/net-tcp-rpc-ext-server.o ${OBJ}/src/net/net-tcp-rpc-ext-drain.o ${OBJ}/src/net/net-tcp-rpc-ext-top-ips.o ${OBJ}/src/net/net-tcp-rpc-ext-uniq-bloom.o ${OBJ}/src/net/net-tcp-rpc-ext-domain.o ${OBJ}/src/net/net-ja4.o ${OBJ}/src/net/net-tcp-direct-dc.o ${OBJ}/src/net/net-socks5-tunnel.o
 	${CC} -o $@ $^ ${LDFLAGS}
 
 ${LIB}/libkdb.a: ${LIB_OBJS}

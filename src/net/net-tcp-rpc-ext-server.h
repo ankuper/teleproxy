@@ -110,3 +110,10 @@ int socks5_set_proxy (const char *url);
 int socks5_is_enabled (void);
 
 extern long long socks5_connects_attempted, socks5_connects_succeeded, socks5_connects_failed;
+
+/* SOCKS5/CONNECT tunnel counters (Story 9-1; only populated when
+   T3_SERVER_SOCKS5_CONNECT=1 and a shim connection is accepted) */
+extern long long socks5_connect_tunnels_active;
+extern long long socks5_connect_tunnels_total;
+extern long long socks5_connect_tunnels_bytes_up;
+extern long long socks5_connect_tunnels_bytes_down;

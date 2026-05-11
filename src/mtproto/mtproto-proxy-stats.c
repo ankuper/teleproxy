@@ -184,6 +184,10 @@ static void update_local_stats_copy (struct worker_stats *S) {
   UPD (socks5_connects_attempted);
   UPD (socks5_connects_succeeded);
   UPD (socks5_connects_failed);
+  UPD (socks5_connect_tunnels_active);
+  UPD (socks5_connect_tunnels_total);
+  UPD (socks5_connect_tunnels_bytes_up);
+  UPD (socks5_connect_tunnels_bytes_down);
   UPD (connections_failed_lru);
   UPD (connections_failed_flood);
   UPD (ext_connections);
@@ -288,6 +292,10 @@ static inline void add_stats (struct worker_stats *W) {
   UPD (socks5_connects_attempted);
   UPD (socks5_connects_succeeded);
   UPD (socks5_connects_failed);
+  UPD (socks5_connect_tunnels_active);
+  UPD (socks5_connect_tunnels_total);
+  UPD (socks5_connect_tunnels_bytes_up);
+  UPD (socks5_connect_tunnels_bytes_down);
   UPD (connections_failed_lru);
   UPD (connections_failed_flood);
   UPD (ext_connections);
@@ -478,6 +486,10 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
 	     "socks5_connects_attempted\t%lld\n"
 	     "socks5_connects_succeeded\t%lld\n"
 	     "socks5_connects_failed\t%lld\n"
+	     "socks5_connect_tunnels_active\t%lld\n"
+	     "socks5_connect_tunnels_total\t%lld\n"
+	     "socks5_connect_tunnels_bytes_up\t%lld\n"
+	     "socks5_connect_tunnels_bytes_down\t%lld\n"
 	     "proxy_protocol_enabled\t%d\n"
 	     "proxy_protocol_connections\t%lld\n"
 	     "proxy_protocol_errors\t%lld\n"
@@ -565,6 +577,10 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
 	     S(socks5_connects_attempted),
 	     S(socks5_connects_succeeded),
 	     S(socks5_connects_failed),
+	     S(socks5_connect_tunnels_active),
+	     S(socks5_connect_tunnels_total),
+	     S(socks5_connect_tunnels_bytes_up),
+	     S(socks5_connect_tunnels_bytes_down),
 	     proxy_protocol_enabled,
 	     S(proxy_protocol_connections_total),
 	     S(proxy_protocol_errors_total),
@@ -732,6 +748,18 @@ void mtfront_prepare_prometheus_stats (stats_buffer_t *sb) {
 	     "# HELP teleproxy_socks5_connects_failed_total SOCKS5 upstream connects failed.\n"
 	     "# TYPE teleproxy_socks5_connects_failed_total counter\n"
 	     "teleproxy_socks5_connects_failed_total %lld\n"
+	     "# HELP teleproxy_socks5_connect_tunnels_active Active SOCKS5/CONNECT relay threads.\n"
+	     "# TYPE teleproxy_socks5_connect_tunnels_active gauge\n"
+	     "teleproxy_socks5_connect_tunnels_active %lld\n"
+	     "# HELP teleproxy_socks5_connect_tunnels_total Total SOCKS5/CONNECT relay sessions started.\n"
+	     "# TYPE teleproxy_socks5_connect_tunnels_total counter\n"
+	     "teleproxy_socks5_connect_tunnels_total %lld\n"
+	     "# HELP teleproxy_socks5_connect_tunnels_bytes_up_total Bytes relayed from shim to target.\n"
+	     "# TYPE teleproxy_socks5_connect_tunnels_bytes_up_total counter\n"
+	     "teleproxy_socks5_connect_tunnels_bytes_up_total %lld\n"
+	     "# HELP teleproxy_socks5_connect_tunnels_bytes_down_total Bytes relayed from target to shim.\n"
+	     "# TYPE teleproxy_socks5_connect_tunnels_bytes_down_total counter\n"
+	     "teleproxy_socks5_connect_tunnels_bytes_down_total %lld\n"
 	     "# HELP teleproxy_proxy_protocol_enabled Whether PROXY protocol is enabled.\n"
 	     "# TYPE teleproxy_proxy_protocol_enabled gauge\n"
 	     "teleproxy_proxy_protocol_enabled %d\n"
@@ -784,6 +812,10 @@ void mtfront_prepare_prometheus_stats (stats_buffer_t *sb) {
 	     S(socks5_connects_attempted),
 	     S(socks5_connects_succeeded),
 	     S(socks5_connects_failed),
+	     S(socks5_connect_tunnels_active),
+	     S(socks5_connect_tunnels_total),
+	     S(socks5_connect_tunnels_bytes_up),
+	     S(socks5_connect_tunnels_bytes_down),
 	     proxy_protocol_enabled,
 	     S(proxy_protocol_connections_total),
 	     S(proxy_protocol_errors_total),
