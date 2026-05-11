@@ -16,7 +16,8 @@ COPY . .
 
 # Build the application
 ARG VERSION=unknown
-RUN make clean && make -j$(nproc) EXTRA_VERSION="${VERSION}"
+ARG T3_SERVER_SOCKS5_CONNECT=0
+RUN make clean && make -j$(nproc) EXTRA_VERSION="${VERSION}" T3_SERVER_SOCKS5_CONNECT="${T3_SERVER_SOCKS5_CONNECT}"
 
 # Runtime image
 FROM alpine:3.21

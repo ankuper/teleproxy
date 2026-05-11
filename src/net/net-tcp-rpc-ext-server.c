@@ -52,6 +52,9 @@
 #include "net/net-tcp-rpc-ext-server.h"
 #include "net/net-tcp-direct-dc.h"
 #include "net/net-obfs2-parse.h"
+#if T3_SERVER_SOCKS5_CONNECT
+#include "net/net-socks5-tunnel.h"
+#endif
 #include "net/net-proxy-protocol.h"
 #include "net/net-websocket.h"
 #include "net/net-tls-parse.h"
@@ -1972,6 +1975,14 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
           drs->delay_pending = 0;
           vkprintf (1, "DRS activated for TLS connection\n");
         }
+#if T3_SERVER_SOCKS5_CONNECT
+        /* Shim connections signal themselves by encoding DC sentinel 0x5353
+           in random_header[60:62].  Hand off to the SOCKS5 relay thread
+           instead of routing to a Telegram DC. */
+        if (direct_mode && pr.dc == SOCKS5_TUNNEL_DC_SENTINEL) {
+          return socks5_tunnel_start (C);
+        }
+#endif
         if (direct_mode) {
           return direct_connect_to_dc (C, D->extra_int4);
         }
