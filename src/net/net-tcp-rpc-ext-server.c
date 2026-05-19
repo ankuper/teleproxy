@@ -1803,6 +1803,25 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
         RETURN_TLS_ERROR(default_domain_info);
       }
 
+      // === Type3 Session Header skip ===
+      // After WS upgrade, the Type3 client sends a 4-byte Session Header
+      // ({0x01, 0x01, 0x00, 0x00}) before the 64-byte obfuscated2 init.
+      // Skip it so the obfs2 parser sees the random_header directly.
+      if (c->ws_state == WS_STATE_ACTIVE && len >= 4) {
+        unsigned char sess_hdr[4];
+        assert (rwm_fetch_lookup (&c->in, sess_hdr, 4) == 4);
+        if (sess_hdr[0] == 0x01 && sess_hdr[1] == 0x01 &&
+            sess_hdr[2] == 0x00 && sess_hdr[3] == 0x00) {
+          vkprintf (1, "Type3 Session Header detected, skipping 4 bytes\n");
+          assert (rwm_skip_data (&c->in, 4) == 4);
+          len -= 4;
+          if (len <= 0) {
+            return NEED_MORE_BYTES;
+          }
+          assert (rwm_fetch_lookup (&c->in, &packet_len, 4) == 4);
+        }
+      }
+
 #if __ALLOW_UNOBFS__
       int tmp[2];
       assert (rwm_fetch_lookup (&c->in, &tmp, 8) == 8);
