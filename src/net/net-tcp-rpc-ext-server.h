@@ -49,6 +49,10 @@ void tcp_rpcs_set_ext_secret(unsigned char secret[16], const char *label,
                              int limit, long long quota, long long rate_limit,
                              int max_ips, int64_t expires);
 void tcp_rpcs_set_ext_rand_pad_only(int set);
+void tcp_rpcs_set_padding_probability(double p);
+double tcp_rpcs_get_padding_probability(void);
+void tcp_rpcs_set_ws_max_frame_size(int size);
+int tcp_rpcs_get_ws_max_frame_size(void);
 const char *tcp_rpcs_get_ext_secret_label(int index);
 int tcp_rpcs_get_ext_secret_limit(int index);
 long long tcp_rpcs_get_ext_secret_quota(int index);

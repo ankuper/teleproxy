@@ -52,6 +52,15 @@
 #define	NEED_MORE_BYTES	((int)0x7FFFFFFFu)
 #define	SKIP_ALL_BYTES	((int)0x80000000u)
 
+/* Type3 padding constants (spec/wire-format.md §2.1, §3; Epic 11).
+   TODO(11-3): consolidate with t3.h once libteleproto3 v0.2.0 is linked. */
+#ifndef T3_FLAG_PADDING
+#define T3_FLAG_PADDING    0x0001u
+#endif
+#ifndef T3_PADDING_MARKER
+#define T3_PADDING_MARKER  0xFEu
+#endif
+
 
 /* for connection flags */
 #define C_WANTRD	1
@@ -260,6 +269,7 @@ struct connection_info {
   int ws_frame_remaining;    // bytes remaining in current WS frame payload
   unsigned char ws_mask[4];  // current frame masking key (client→server)
   int ws_mask_offset;        // current offset into mask rotation
+  uint16_t ws_flags;         // Type3 Session Header flags (T3_FLAG_PADDING etc.)
   int ws_frame_header_state; // partial header parse state
 
   struct raw_message in_u, in, out, out_p;

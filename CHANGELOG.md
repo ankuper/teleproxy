@@ -1,5 +1,34 @@
 # Changelog
 
+## [teleproxy-type3-v4.11.0-t3-v0.4.0] — Type3 transport support
+
+Type3 dual-mode transport: WebSocket + HTTP stream (POST+chunked).
+
+### Added
+
+- **HTTP stream transport** — clients can connect via HTTP POST with `Transfer-Encoding: chunked`
+  instead of WebSocket upgrade. The server auto-detects transport mode from the HTTP request line
+  (`GET` → WebSocket, `POST` → HTTP stream). Resistant to WebSocket-specific DPI fingerprinting (ТСПУ).
+- **WebSocket transport** — RFC 6455-compliant WebSocket upgrade with `Sec-WebSocket-Accept`
+  validation. Binary frames carry the obfuscated-2 MTProto stream.
+- **Transport auto-detection** — a single upstream port handles both WebSocket and HTTP stream
+  connections. No configuration change needed; the server dispatches based on the first HTTP line.
+- **SOCKS5/CONNECT tunnel** — `net-tcp-connections.c` now supports SOCKS5 upstream tunneling
+  for Type3 connections (Story 9-1).
+- New feature page: `docs/features/http-stream-transport.md` — deployment guide with nginx
+  configuration, critical directives table, and combined WS+stream location blocks.
+
+### nginx configuration
+
+HTTP stream mode requires `proxy_buffering off`, `proxy_request_buffering off`, and
+`ssl_buffer_size 4k` (recommended) in the nginx location block. See
+[HTTP Stream Transport](docs/features/http-stream-transport.md) for production-ready examples.
+
+### Protocol
+
+Implements [teleproto3 v0.4.0](https://github.com/ankuper/teleproto3) wire-format specification
+(§1.2 WebSocket mode, §1.3 HTTP stream mode, §1.4 frontend requirements).
+
 ## [4.11.0]
 
 SOCKS5 upstream support in check command (#57), Cloudflare Spectrum docs (#55).

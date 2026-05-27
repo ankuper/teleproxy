@@ -17,8 +17,11 @@
 
 #include "net/net-obfs2-parse.h"
 
+#include <stdio.h>
 #include <string.h>
 #include <openssl/evp.h>
+
+#include "common/kprintf.h"
 
 #include "common/sha256.h"
 #include "crypto/aesni256.h"
@@ -31,6 +34,19 @@ int obfs2_parse_header (unsigned char header[64],
                         struct obfs2_parse_result *result) {
   unsigned char saved[64];
   memcpy (saved, header, 64);
+
+  /* DEBUG: dump received header */
+  {
+    char hex[129];
+    for (int i = 0; i < 64; i++) sprintf(hex + i*2, "%02x", header[i]);
+    vkprintf (1, "OBFS2_DEBUG: header=%s\n", hex);
+    vkprintf (1, "OBFS2_DEBUG: secret_cnt=%d, rand_pad_only=%d\n", secret_cnt, rand_pad_only);
+    if (secret_cnt > 0) {
+      char shex[33];
+      for (int i = 0; i < 16; i++) sprintf(shex + i*2, "%02x", secrets[0][i]);
+      vkprintf (1, "OBFS2_DEBUG: secret[0]=%s\n", shex);
+    }
+  }
 
   struct aes_key_data kd;
   int iterations = (secret_cnt > 0) ? secret_cnt : 1;
@@ -68,6 +84,8 @@ int obfs2_parse_header (unsigned char header[64],
     EVP_CIPHER_CTX_free (ctx);
 
     unsigned tag = *(unsigned *)(header + 56);
+    /* DEBUG: dump decrypted tag */
+    vkprintf (1, "OBFS2_DEBUG: sid=%d tag=0x%08x dc=%d (expected 0xdddddddd or 0xeeeeeeee or 0xefefefef)\n", sid, tag, *(short *)(header + 60));
 
     if (tag == OBFS2_TAG_PAD ||
         ((tag == OBFS2_TAG_MEDIUM || tag == OBFS2_TAG_COMPACT) && !rand_pad_only)) {

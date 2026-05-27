@@ -331,6 +331,16 @@ static int get_optional_bool (toml_datum_t toptab, const char *key, int fallback
   return fallback;
 }
 
+static double get_optional_double (toml_datum_t toptab, const char *key, double fallback) {
+  toml_datum_t v = toml_get (toptab, key);
+  if (v.type == TOML_FP64) {
+    return v.u.fp64;
+  } else if (v.type == TOML_INT64) {
+    return (double) v.u.int64;
+  }
+  return fallback;
+}
+
 int toml_config_load (const char *path, struct toml_config *cfg,
                       char *errbuf, int errlen) {
   memset (cfg, 0, sizeof (*cfg));
@@ -341,6 +351,7 @@ int toml_config_load (const char *path, struct toml_config *cfg,
   cfg->http_stats = -1;
   cfg->random_padding_only = -1;
   cfg->ipv6 = -1;
+  cfg->padding_probability = -1.0;
 
   toml_result_t res = toml_parse_file_ex (path);
   if (!res.ok) {
@@ -429,6 +440,22 @@ int toml_config_load (const char *path, struct toml_config *cfg,
   /* SOCKS5 upstream proxy */
   get_optional_string (top, "socks5", cfg->socks5, sizeof (cfg->socks5));
 
+  /* Type3 padding probability */
+  cfg->padding_probability = get_optional_double (top, "padding_probability", -1.0);
+  if (cfg->padding_probability != -1.0 && (cfg->padding_probability < 0.0 || cfg->padding_probability > 1.0)) {
+    snprintf (errbuf, errlen, "padding_probability must be in [0.0, 1.0]");
+    toml_free (res);
+    return -1;
+  }
+
+  /* Type3 WS max frame size */
+  cfg->ws_max_frame_size = get_optional_int (top, "ws_max_frame_size", 0);
+  if (cfg->ws_max_frame_size != 0 && (cfg->ws_max_frame_size < 1024 || cfg->ws_max_frame_size > 16777216)) {
+    snprintf (errbuf, errlen, "ws_max_frame_size must be in [1024, 16777216]");
+    toml_free (res);
+    return -1;
+  }
+
   /* Secrets */
   if (parse_secrets (top, cfg, errbuf, errlen) < 0) {
     toml_free (res);
@@ -505,6 +532,9 @@ int toml_config_reload (const char *path, struct toml_config *cfg) {
   snprintf (cfg->ip_allowlist, sizeof (cfg->ip_allowlist), "%s", new_cfg.ip_allowlist);
 
   cfg->drain_timeout_secs = new_cfg.drain_timeout_secs;
+
+  cfg->padding_probability = new_cfg.padding_probability;
+  cfg->ws_max_frame_size = new_cfg.ws_max_frame_size;
 
   kprintf ("config reloaded: %d secret(s)\n", cfg->secret_count);
   return 0;

@@ -87,6 +87,14 @@ struct toml_config {
 
   /* SOCKS5 upstream proxy (not reloadable) */
   char socks5[256];        /* socks5://[user:pass@]host:port; empty = not set */
+
+  /* Type3 padding probability (reloadable) */
+  double padding_probability; /* server-side padding probability; -1.0 = not set */
+
+  /* Type3 WS max frame size (reloadable).  Server→client WS frames are
+     randomized in [4096, ws_max_frame_size].  Avoids DPI fingerprinting
+     of constant frame sizes.  0 = not set (default 16384). */
+  int ws_max_frame_size;
 };
 
 /*
