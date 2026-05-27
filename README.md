@@ -39,6 +39,7 @@ Supports: DigitalOcean · Vultr · Hetzner · Linode · any Ubuntu/Debian VPS
 ## Highlights
 
 - **Fake-TLS camouflage** — traffic indistinguishable from normal HTTPS (TLS 1.3)
+- **Type3 transport** — dual-mode WebSocket + HTTP stream (POST+chunked) behind nginx; auto-detected per-connection. [WebSocket docs](docs/features/websocket-transport.md) · [HTTP stream docs](docs/features/http-stream-transport.md)
 - **Direct-to-DC mode** — bypass middle-end relays, zero config files needed
 - **Dynamic Record Sizing** — defeats statistical traffic analysis
 - **8 MB Docker image** — 7x smaller than the original

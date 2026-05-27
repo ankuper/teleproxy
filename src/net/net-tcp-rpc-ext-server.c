@@ -508,6 +508,30 @@ void tcp_rpcs_set_ext_rand_pad_only(int set) {
   ext_rand_pad_only = set;
 }
 
+double server_padding_probability = 0.3;
+
+void tcp_rpcs_set_padding_probability(double p) {
+  if (p < 0.0) p = 0.0;
+  if (p > 1.0) p = 1.0;
+  server_padding_probability = p;
+}
+
+double tcp_rpcs_get_padding_probability(void) {
+  return server_padding_probability;
+}
+
+int server_ws_max_frame_size = 16384;  /* default: 16 KiB */
+
+void tcp_rpcs_set_ws_max_frame_size(int size) {
+  if (size < 1024) size = 1024;
+  if (size > 16 * 1024 * 1024) size = 16 * 1024 * 1024;
+  server_ws_max_frame_size = size;
+}
+
+int tcp_rpcs_get_ws_max_frame_size(void) {
+  return server_ws_max_frame_size;
+}
+
 /* tcp_rpcs_pin_ext_secrets, tcp_rpcs_reload_ext_secrets and the
    tcp_rpcs_drain_* helpers live in net-tcp-rpc-ext-drain.c — they need
    shared write access to the ext_secret_* state defined above and were
@@ -1854,6 +1878,12 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
           unsigned tag = pr.tag;
           int secret_id = compact_to_slot[pr.secret_id];
 
+          if (c->ws_state == WS_STATE_ACTIVE) {
+            c->ws_flags = (uint16_t)random_header[2] | ((uint16_t)random_header[3] << 8);
+            vkprintf (1, "T3_SESSION_HEADER: extracted ws_flags = 0x%04x (padding=%d)\n",
+                      c->ws_flags, (c->ws_flags & T3_FLAG_PADDING) != 0);
+          }
+
           if (tag != OBFS2_TAG_PAD && allow_only_tls) {
             vkprintf (1, "Expected random padding mode\n");
             RETURN_TLS_ERROR(default_domain_info);
@@ -1863,6 +1893,7 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
           aes_crypto_ctr128_init (C, &pr.keys, sizeof (pr.keys));
           assert (c->crypto);
           struct aes_crypto *T = c->crypto;
+
           evp_crypt (T->read_aeskey, random_header_ct, random_header_ct, 64);
 
           assert (rwm_skip_data (&c->in, 64) == 64);

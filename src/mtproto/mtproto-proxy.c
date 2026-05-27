@@ -1297,6 +1297,12 @@ static void mtfront_sighup_handler (void) {
   if (toml_config_path) {
     if (toml_config_reload (toml_config_path, &toml_cfg) == 0) {
       apply_toml_secrets (&toml_cfg);
+      if (toml_cfg.padding_probability >= 0.0) {
+        tcp_rpcs_set_padding_probability (toml_cfg.padding_probability);
+      }
+      if (toml_cfg.ws_max_frame_size > 0) {
+        tcp_rpcs_set_ws_max_frame_size (toml_cfg.ws_max_frame_size);
+      }
     }
   }
 
@@ -1568,6 +1574,26 @@ int f_parse_option (int val) {
   case 2011:
     toml_cfg.ja4_log = 1;
     break;
+  case 2012:
+    {
+      double p = atof (optarg);
+      if (p < 0.0 || p > 1.0) {
+        kprintf ("invalid padding probability: %s (must be in [0.0, 1.0])\n", optarg);
+        usage ();
+      }
+      tcp_rpcs_set_padding_probability (p);
+    }
+    break;
+  case 2013:
+    {
+      int sz = atoi (optarg);
+      if (sz < 1024 || sz > 16 * 1024 * 1024) {
+        kprintf ("invalid ws-max-frame-size: %s (must be in [1024, 16777216])\n", optarg);
+        usage ();
+      }
+      tcp_rpcs_set_ws_max_frame_size (sz);
+    }
+    break;
   default:
     return -1;
   }
@@ -1597,6 +1623,8 @@ void mtfront_prepare_parse_options (void) {
   parse_option ("dc-probe-interval", required_argument, 0, 2009, "seconds between DC health probes (0=disabled, default 0)");
   parse_option ("no-mss-clamp", no_argument, 0, 2010, "disable automatic ClientHello fragmentation (default on; see DPI Resistance docs)");
   parse_option ("ja4-log", no_argument, 0, 2011, "log ja4=<hash> sni=<name> per ClientHello at verbose level 2 (top-N counter is always on)");
+  parse_option ("padding-probability", required_argument, 0, 2012, "sets server padding probability [0.0, 1.0] (default 0.3)");
+  parse_option ("ws-max-frame-size", required_argument, 0, 2013, "max WS frame size in bytes; frames randomized in [4096, max] (default 16384)");
 }
 
 void mtfront_parse_extra_args (int argc, char *argv[]) /* {{{ */ {
@@ -1701,6 +1729,12 @@ void mtfront_pre_init (void) {
     }
     if (toml_cfg.maxconn > 0 && !engine_state->maxconn_from_cli) {
       set_maxconn (toml_cfg.maxconn);
+    }
+    if (toml_cfg.padding_probability >= 0.0) {
+      tcp_rpcs_set_padding_probability (toml_cfg.padding_probability);
+    }
+    if (toml_cfg.ws_max_frame_size > 0) {
+      tcp_rpcs_set_ws_max_frame_size (toml_cfg.ws_max_frame_size);
     }
   }
 

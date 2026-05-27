@@ -266,6 +266,15 @@ static inline int compute_conn_events (socket_connection_job_t c) {
   if (flags & C_ERROR) {
     return 0;
   } else {
+    /* Outbound (DC) connections use level-triggered epoll to prevent
+       read starvation: with edge-triggered, if teleproxy doesn't drain
+       the DC receive buffer fast enough, C_NORD gets stuck and the
+       echo response is never read → deadlock. Level-triggered ensures
+       epoll keeps firing as long as data is available. */
+    connection_job_t conn = SOCKET_CONN_INFO(c)->conn;
+    if (conn && CONN_INFO(conn)->basic_type == ct_outbound) {
+      return EVT_READ | EVT_WRITE | EVT_SPEC | EVT_LEVEL;
+    }
     return EVT_READ | EVT_WRITE | EVT_SPEC;
   }
 }
