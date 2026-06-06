@@ -1600,13 +1600,14 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
         continue;
       }
         
-      // http
+#endif
+
+      // http (outside __ALLOW_UNOBFS__ — HTTP stream is a legitimate transport, not unobfuscated)
       if ((packet_len == *(int *)"HEAD" || packet_len == *(int *)"POST" || packet_len == *(int *)"GET " || packet_len == *(int *)"OPTI") && TCP_RPCS_FUNC(C)->http_fallback_type) {
         D->crypto_flags |= RPCF_COMPACT_OFF;
         vkprintf (1, "HTTP type\n");
         return tcp_rpcs_parse_execute (C);
       }
-#endif
 
       // fake tls
       if (c->flags & C_IS_TLS) {
