@@ -1440,14 +1440,14 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
           vkprintf (1, "HTTP_STREAM: POST request from %s:%d (%d header bytes)\n",
                     show_remote_ip (C), c->remote_port, consume);
 
-          /* Send HTTP 200 + chunked response */
+          /* Send HTTP 200 + chunked response via out_p (plaintext, bypasses crypto) */
           static const char http_200[] =
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: application/octet-stream\r\n"
             "Transfer-Encoding: chunked\r\n"
             "Connection: keep-alive\r\n"
             "\r\n";
-          rwm_push_data (&c->out, http_200, sizeof(http_200) - 1);
+          rwm_push_data (&c->out_p, http_200, sizeof(http_200) - 1);
           __sync_fetch_and_or (&c->flags, C_WANTWR);
           job_signal (JOB_REF_CREATE_PASS (C), JS_RUN);
 
