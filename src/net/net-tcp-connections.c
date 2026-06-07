@@ -37,6 +37,7 @@
 #include "crypto/aesni256.h"
 #include "net/net-crypto-aes.h"
 #include "net/net-websocket.h"
+#include <t3.h>
 #include "kprintf.h"
 
 extern double server_padding_probability;
@@ -306,7 +307,20 @@ int cpu_tcp_aes_crypto_ctr128_encrypt_output (connection_job_t C) /* {{{ */ {
   } else {
     while (c->out.total_bytes) {
       int len = c->out.total_bytes;
-      if (c->ws_state == WS_STATE_ACTIVE) {
+      if (c->ws_state == WS_STATE_HTTP_STREAM) {
+        /* Type3 HTTP stream: wrap outgoing data in HTTP chunked encoding */
+        const int HTTP_MAX_CHUNK = 16384;
+        if (len > HTTP_MAX_CHUNK) {
+          len = HTTP_MAX_CHUNK;
+        }
+        uint8_t chunk_hdr[16];
+        size_t chunk_hdr_len = 0;
+        snprintf ((char *)chunk_hdr, sizeof(chunk_hdr), "%x\r\n", len);
+        chunk_hdr_len = strlen ((char *)chunk_hdr);
+        rwm_push_data (&c->out_p, chunk_hdr, (int)chunk_hdr_len);
+        /* chunk trailer \r\n will be written after the data — see below */
+        vkprintf (2, "HTTP_STREAM_OUTPUT: chunk len=%d\n", len);
+      } else if (c->ws_state == WS_STATE_ACTIVE) {
         // Type3 WS transport: wrap outgoing (server→client) payloads in
         // unmasked RFC 6455 binary frames. Randomize size between 4 KiB
         // and ws_max_frame_size for DPI resistance (fixed frame sizes
@@ -336,6 +350,9 @@ int cpu_tcp_aes_crypto_ctr128_encrypt_output (connection_job_t C) /* {{{ */ {
         fail_connection (C, -1);
         return -1;
       }
+      if (c->ws_state == WS_STATE_HTTP_STREAM) {
+        rwm_push_data (&c->out_p, "\r\n", 2);
+      }
     }
   }
 
@@ -351,7 +368,44 @@ int cpu_tcp_aes_crypto_ctr128_decrypt_input (connection_job_t C) /* {{{ */ {
 
   while (c->in_u.total_bytes) {
     int len = c->in_u.total_bytes;
-    if (c->ws_state == WS_STATE_ACTIVE) {
+    if (c->ws_state == WS_STATE_HTTP_STREAM) {
+      /* HTTP stream: dechunk incoming data, then decrypt */
+      int peek_len = len < 16384 ? len : 16384;
+      unsigned char peek_buf[peek_len];
+      assert (rwm_fetch_lookup (&c->in_u, peek_buf, peek_len) == peek_len);
+
+      const uint8_t *chunk_data = NULL;
+      size_t chunk_data_len = 0, consumed = 0;
+      t3_result_t rc = t3_http_chunk_parse (peek_buf, peek_len, &chunk_data, &chunk_data_len, &consumed);
+      if (rc == T3_ERR_BUF_TOO_SMALL || consumed == 0) {
+        return 0;
+      }
+      if (rc != T3_OK) {
+        vkprintf (1, "HTTP_STREAM decrypt: chunk parse error %d\n", rc);
+        fail_connection (C, -1);
+        return -1;
+      }
+      assert (rwm_skip_data (&c->in_u, (int)consumed) == (int)consumed);
+      if (chunk_data_len == 0) {
+        return 0;
+      }
+
+      len = (int)chunk_data_len;
+      struct raw_message chunk_msg;
+      rwm_create (&chunk_msg, chunk_data, len);
+
+      struct raw_message dec_msg;
+      rwm_init (&dec_msg, 0);
+      int r = rwm_encrypt_decrypt_to (&chunk_msg, &dec_msg, len, T->read_aeskey, 1);
+      rwm_free (&chunk_msg);
+      if (r != len) {
+        rwm_free (&dec_msg);
+        fail_connection (C, -1);
+        return -1;
+      }
+      rwm_union (&c->in, &dec_msg);
+      continue;
+    } else if (c->ws_state == WS_STATE_ACTIVE) {
       // Type3 WS transport: unwrap incoming (client→server, masked) frames.
       // Each frame is: [2..14 byte header] [masked payload]. Parse header
       // once per frame, then unmask and pass payload through the AES-CTR

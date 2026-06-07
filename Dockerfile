@@ -5,16 +5,24 @@ FROM alpine:3.21 AS builder
 # linux-headers: provides <linux/futex.h> used by mp-queue.c and jobs.c
 # DEBUG_TOOLS=1: adds libunwind for stack traces in crash dumps (test/CI only)
 ARG DEBUG_TOOLS=0
-RUN apk add --no-cache build-base openssl-dev zlib-dev linux-headers git \
+RUN apk add --no-cache build-base openssl-dev zlib-dev linux-headers git cmake curl \
     $([ "$DEBUG_TOOLS" = "1" ] && echo "libunwind-dev")
 
 # Set working directory
 WORKDIR /src
 
+# Download libteleproto3 from latest release (ankuper/teleproto3)
+RUN ARCH=$(uname -m) && \
+    curl -fsSL "https://github.com/ankuper/teleproto3/releases/latest/download/libteleproto3-linux-${ARCH}.tar.gz" \
+      -o /tmp/libteleproto3.tar.gz && \
+    mkdir -p teleproto3/include && \
+    tar xzf /tmp/libteleproto3.tar.gz -C teleproto3 && \
+    rm /tmp/libteleproto3.tar.gz
+
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the application (links against libteleproto3 via T3_LIB_DIR)
 ARG VERSION=unknown
 ARG EXTRA_CFLAGS=
 ARG EXTRA_LDFLAGS=
@@ -23,7 +31,8 @@ RUN make clean && make -j$(nproc) \
     EXTRA_VERSION="${VERSION}" \
     EXTRA_CFLAGS="${EXTRA_CFLAGS}" \
     EXTRA_LDFLAGS="${EXTRA_LDFLAGS}" \
-    T3_SERVER_SOCKS5_CONNECT="${T3_SERVER_SOCKS5_CONNECT}"
+    T3_SERVER_SOCKS5_CONNECT="${T3_SERVER_SOCKS5_CONNECT}" \
+    T3_LIB_DIR=teleproto3
 
 # Runtime image
 FROM alpine:3.21

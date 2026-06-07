@@ -60,6 +60,7 @@
 #endif
 #include "net/net-proxy-protocol.h"
 #include "net/net-websocket.h"
+#include <t3.h>
 #include "net/net-tls-parse.h"
 #include "net/net-ja4.h"
 #include "net/net-ip-acl.h"
@@ -1414,6 +1415,53 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
     // handles the bytes normally. If we need more data (r == 0), return.
     if (c->ws_state == WS_STATE_HANDSHAKE) {
       vkprintf(3, "WS_STATE: processing handshake, bytes=%d\n", c->in.total_bytes);
+
+      /* === TYPE3-HTTP-STREAM BEGIN === */
+      /* Check if this is an HTTP POST (HTTP stream transport).
+         Must check BEFORE ws_parse_upgrade_request which expects GET. */
+      if (c->in.total_bytes >= 4) {
+        unsigned char first4[4];
+        rwm_fetch_lookup (&c->in, first4, 4);
+        if (memcmp(first4, "POST", 4) == 0) {
+          /* HTTP stream: wait for complete headers (\r\n\r\n) */
+          int total = c->in.total_bytes;
+          if (total < 16) { return NEED_MORE_BYTES; }
+          int peek_len = total < 4096 ? total : 4096;
+          unsigned char peek_buf[peek_len];
+          assert (rwm_fetch_lookup (&c->in, peek_buf, peek_len) == peek_len);
+          char *end = strstr ((char *)peek_buf, "\r\n\r\n");
+          if (!end) {
+            if (total > 4096) { fail_connection (C, -1); return 0; }
+            return NEED_MORE_BYTES;
+          }
+          int consume = (int)(end - (char *)peek_buf) + 4;
+          assert (rwm_skip_data (&c->in, consume) == consume);
+
+          vkprintf (1, "HTTP_STREAM: POST request from %s:%d (%d header bytes)\n",
+                    show_remote_ip (C), c->remote_port, consume);
+
+          /* Send HTTP 200 + chunked response */
+          static const char http_200[] =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/octet-stream\r\n"
+            "Transfer-Encoding: chunked\r\n"
+            "Connection: keep-alive\r\n"
+            "\r\n";
+          rwm_push_data (&c->out, http_200, sizeof(http_200) - 1);
+          __sync_fetch_and_or (&c->flags, C_WANTWR);
+          job_signal (JOB_REF_CREATE_PASS (C), JS_RUN);
+
+          c->ws_state = WS_STATE_HTTP_STREAM;
+          vkprintf (1, "HTTP_STREAM: active, sent 200 OK + chunked\n");
+
+          if (!c->in.total_bytes) { return NEED_MORE_BYTES; }
+          /* Fall through to HTTP_STREAM data parsing below */
+        }
+      }
+      /* === TYPE3-HTTP-STREAM END === */
+
+      if (c->ws_state == WS_STATE_HANDSHAKE) {
+      /* Original WS upgrade probe */
       char ws_key[128] = {0};
       char ws_path[256] = {0};
       int r = ws_parse_upgrade_request (&c->in, ws_key, sizeof(ws_key), ws_path, sizeof(ws_path));
@@ -1454,6 +1502,55 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
         if (!c->in.total_bytes) {
           return NEED_MORE_BYTES;
         }
+      }
+    } /* end WS handshake probe */
+    } /* end ws_state == WS_STATE_HANDSHAKE (inner) */
+
+    // === Type3 HTTP stream: pre-crypto chunked unwrap ===
+    if (c->ws_state == WS_STATE_HTTP_STREAM && !c->crypto) {
+      vkprintf (3, "HTTP_STREAM: pre-crypto, in.total_bytes=%d\n", c->in.total_bytes);
+
+      struct raw_message dechunked;
+      rwm_init (&dechunked, 0);
+
+      while (c->in.total_bytes > 0) {
+        int avail = c->in.total_bytes;
+        int peek_len = avail < 16384 ? avail : 16384;
+        unsigned char peek_buf[peek_len];
+        assert (rwm_fetch_lookup (&c->in, peek_buf, peek_len) == peek_len);
+
+        const uint8_t *chunk_data = NULL;
+        size_t chunk_data_len = 0, consumed = 0;
+        t3_result_t rc = t3_http_chunk_parse (peek_buf, peek_len, &chunk_data, &chunk_data_len, &consumed);
+        if (rc == T3_ERR_BUF_TOO_SMALL || consumed == 0) {
+          break;
+        }
+        if (rc != T3_OK) {
+          vkprintf (1, "HTTP_STREAM: chunk parse error %d\n", rc);
+          fail_connection (C, -1);
+          rwm_free (&dechunked);
+          return 0;
+        }
+        assert (rwm_skip_data (&c->in, (int)consumed) == (int)consumed);
+        if (chunk_data_len > 0) {
+          rwm_push_data (&dechunked, chunk_data, (int)chunk_data_len);
+        }
+        if (chunk_data_len == 0 && consumed > 0) {
+          /* Terminal chunk (0\r\n\r\n) */
+          vkprintf (2, "HTTP_STREAM: terminal chunk received\n");
+          break;
+        }
+      }
+
+      if (dechunked.total_bytes > 0) {
+        rwm_union (&dechunked, &c->in);
+        c->in = dechunked;
+      } else {
+        rwm_free (&dechunked);
+      }
+
+      if (!c->in.total_bytes) {
+        return NEED_MORE_BYTES;
       }
     }
 
@@ -1824,7 +1921,7 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
         return 11; // waiting for dummy ChangeCipherSpec and first packet
       }
 
-      if (allow_only_tls && !(c->flags & C_IS_TLS) && c->ws_state != WS_STATE_ACTIVE) {
+      if (allow_only_tls && !(c->flags & C_IS_TLS) && c->ws_state != WS_STATE_ACTIVE && c->ws_state != WS_STATE_HTTP_STREAM) {
         vkprintf (1, "Expected TLS-transport\n");
         RETURN_TLS_ERROR(default_domain_info);
       }

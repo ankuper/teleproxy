@@ -72,8 +72,12 @@ endif
 # Architecture-specific LDFLAGS (if needed, here kept same for simplicity)
 LDFLAGS := $(COMMON_LDFLAGS)
 
+# libteleproto3 — consumed from release (see CLAUDE.md "Release & Deployment Rules")
+T3_LIB_DIR ?= teleproto3
+LDFLAGS += -L$(T3_LIB_DIR) -lteleproto3
+
 LIB = ${OBJ}/lib
-CINCLUDE = -iquote src/common -iquote src/common/toml -iquote src -iquote .
+CINCLUDE = -iquote src/common -iquote src/common/toml -iquote src -iquote . -I$(T3_LIB_DIR)/include
 
 LIBLIST = ${LIB}/libkdb.a
 

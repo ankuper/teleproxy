@@ -13,9 +13,10 @@
 
 #include "net/net-connections.h"
 
-#define WS_STATE_NONE       0
-#define WS_STATE_HANDSHAKE  1
-#define WS_STATE_ACTIVE     2
+#define WS_STATE_NONE         0
+#define WS_STATE_HANDSHAKE    1
+#define WS_STATE_ACTIVE       2
+#define WS_STATE_HTTP_STREAM  3
 
 // WebSocket opcodes
 #define WS_OPCODE_CONTINUATION 0x0
