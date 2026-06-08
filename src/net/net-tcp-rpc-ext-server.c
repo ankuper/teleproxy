@@ -1507,17 +1507,20 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
     } /* end ws_state == WS_STATE_HANDSHAKE (inner) */
 
     // === Type3 HTTP stream: pre-crypto chunked unwrap ===
+    // Dechunk c->in_u (raw TCP bytes from nginx) into c->in (raw obfs2 payload).
+    // After dechunk, c->in contains plaintext that the obfs2 parser below consumes.
+    // We use in_u as the chunked buffer and in as the dechunked buffer to avoid
+    // re-entering the dechunk path on the same data.
     if (c->ws_state == WS_STATE_HTTP_STREAM && !c->crypto) {
-      vkprintf (3, "HTTP_STREAM: pre-crypto, in.total_bytes=%d\n", c->in.total_bytes);
+      /* Move chunked data from c->in to temporary, dechunk into c->in */
+      struct raw_message chunked = c->in;
+      rwm_init (&c->in, 0);
 
-      struct raw_message dechunked;
-      rwm_init (&dechunked, 0);
-
-      while (c->in.total_bytes > 0) {
-        int avail = c->in.total_bytes;
+      while (chunked.total_bytes > 0) {
+        int avail = chunked.total_bytes;
         int peek_len = avail < 16384 ? avail : 16384;
         unsigned char peek_buf[peek_len];
-        assert (rwm_fetch_lookup (&c->in, peek_buf, peek_len) == peek_len);
+        assert (rwm_fetch_lookup (&chunked, peek_buf, peek_len) == peek_len);
 
         const uint8_t *chunk_data = NULL;
         size_t chunk_data_len = 0, consumed = 0;
@@ -1527,31 +1530,30 @@ int tcp_rpcs_compact_parse_execute (connection_job_t C) {
         }
         if (rc != T3_OK) {
           vkprintf (1, "HTTP_STREAM: chunk parse error %d\n", rc);
+          rwm_free (&chunked);
           fail_connection (C, -1);
-          rwm_free (&dechunked);
           return 0;
         }
-        assert (rwm_skip_data (&c->in, (int)consumed) == (int)consumed);
+        assert (rwm_skip_data (&chunked, (int)consumed) == (int)consumed);
         if (chunk_data_len > 0) {
-          rwm_push_data (&dechunked, chunk_data, (int)chunk_data_len);
+          rwm_push_data (&c->in, chunk_data, (int)chunk_data_len);
         }
         if (chunk_data_len == 0 && consumed > 0) {
-          /* Terminal chunk (0\r\n\r\n) */
-          vkprintf (2, "HTTP_STREAM: terminal chunk received\n");
           break;
         }
       }
 
-      if (dechunked.total_bytes > 0) {
-        rwm_union (&dechunked, &c->in);
-        c->in = dechunked;
+      /* Put unconsumed chunked data back */
+      if (chunked.total_bytes > 0) {
+        rwm_union (&c->in, &chunked);
       } else {
-        rwm_free (&dechunked);
+        rwm_free (&chunked);
       }
 
       if (!c->in.total_bytes) {
         return NEED_MORE_BYTES;
       }
+      /* Fall through to obfs2 parse below with dechunked data in c->in */
     }
 
     // === Type3 WebSocket active: pre-crypto frame unwrap ===
