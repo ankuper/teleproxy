@@ -1,5 +1,31 @@
 # Changelog
 
+## [4.15.0-t3-v0.5.0] — Type3 transport on upstream 4.15.0 (libteleproto3 v0.5.0)
+
+Rebase of the Type3 (teleproto3) transport layer onto upstream teleproxy 4.15.0,
+statically linked against [libteleproto3 v0.5.0](https://github.com/ankuper/teleproto3/releases/tag/v0.5.0).
+
+### Included
+
+- **Type3 HTTP stream transport** (POST + chunked) and **WebSocket transport**,
+  with transport auto-detection on a single upstream port.
+- **SOCKS5/CONNECT upstream tunnel** for Type3 connections (Story 9-1).
+- All upstream 4.12–4.15 changes absorbed: JA4 fingerprint stats on `/stats` and
+  `/metrics`, automatic ClientHello MSS-clamp fragmentation, macOS backend-forward
+  fix, and more (see the upstream entries below).
+
+### Note — CLI option codes
+
+`--padding-probability` and `--ws-max-frame-size` moved to internal option codes
+2012/2013 (from 2010/2011) to avoid a collision with upstream's new `--no-mss-clamp`
+/ `--ja4-log`. Flag names and behaviour are unchanged; no config edits required.
+
+### Binaries
+
+Statically linked `teleproxy-linux-amd64` and `teleproxy-linux-arm64` (musl/Alpine),
+no runtime dependencies. Production deployment continues via the ghcr.io image
+(`ghcr.io/ankuper/teleproxy:teleproto3-support`); these binaries are for standalone use.
+
 ## [4.15.0] - 2026-05-30
 
 - Expose ClientHello JA4 fingerprint distribution on `/stats` and `/metrics`
