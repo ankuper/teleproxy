@@ -12,10 +12,17 @@ RUN apk add --no-cache build-base openssl-dev zlib-dev linux-headers git cmake c
 WORKDIR /src
 
 # Download libteleproto3 from its GitHub Release (ankuper/teleproto3).
-# Pinned for reproducibility; the v0.6.0+ archive layout is lib/{include,libteleproto3.a}.
-ARG T3_LIB_VERSION=v0.6.0
+# Defaults to the latest release; the v0.6.0+ archive layout is lib/{include,libteleproto3.a}.
+# Pass --build-arg T3_LIB_VERSION=vX.Y.Z to pin a specific release for a
+# reproducible tagged server build.
+ARG T3_LIB_VERSION=latest
 RUN ARCH=$(uname -m) && \
-    curl -fsSL "https://github.com/ankuper/teleproto3/releases/download/${T3_LIB_VERSION}/libteleproto3-linux-${ARCH}.tar.gz" \
+    if [ "$T3_LIB_VERSION" = "latest" ]; then \
+      T3_BASE="https://github.com/ankuper/teleproto3/releases/latest/download"; \
+    else \
+      T3_BASE="https://github.com/ankuper/teleproto3/releases/download/${T3_LIB_VERSION}"; \
+    fi && \
+    curl -fsSL "${T3_BASE}/libteleproto3-linux-${ARCH}.tar.gz" \
       -o /tmp/libteleproto3.tar.gz && \
     mkdir -p teleproto3 && \
     tar xzf /tmp/libteleproto3.tar.gz -C teleproto3 && \
