@@ -1,9 +1,9 @@
 # Changelog
 
-## [4.15.0-t3-v0.5.0] — Type3 transport on upstream 4.15.0 (libteleproto3 v0.5.0)
+## [4.15.0-t3-v0.6.0] — Type3 transport on upstream 4.15.0 (libteleproto3 v0.6.0)
 
-Rebase of the Type3 (teleproto3) transport layer onto upstream teleproxy 4.15.0,
-statically linked against [libteleproto3 v0.5.0](https://github.com/ankuper/teleproto3/releases/tag/v0.5.0).
+Type3 (teleproto3) transport on upstream teleproxy 4.15.0, statically linked
+against [libteleproto3 v0.6.0](https://github.com/ankuper/teleproto3/releases/tag/v0.6.0).
 
 ### Included
 
@@ -13,6 +13,14 @@ statically linked against [libteleproto3 v0.5.0](https://github.com/ankuper/tele
 - All upstream 4.12–4.15 changes absorbed: JA4 fingerprint stats on `/stats` and
   `/metrics`, automatic ClientHello MSS-clamp fragmentation, macOS backend-forward
   fix, and more (see the upstream entries below).
+
+### libteleproto3 v0.6.0
+
+Built against the v0.6.0 release. Its archive layout changed to mirror the
+source tree — `lib/{include,libteleproto3.a}` plus a bundled `spec/` — so the
+Dockerfile and `release.yml` now extract to `teleproto3/` and point
+`T3_LIB_DIR` at `teleproto3/lib`. The release also adds prebuilt macOS and
+Windows libs upstream, though the proxy itself ships Linux-only.
 
 ### Note — CLI option codes
 

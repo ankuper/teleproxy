@@ -11,11 +11,13 @@ RUN apk add --no-cache build-base openssl-dev zlib-dev linux-headers git cmake c
 # Set working directory
 WORKDIR /src
 
-# Download libteleproto3 from latest release (ankuper/teleproto3)
+# Download libteleproto3 from its GitHub Release (ankuper/teleproto3).
+# Pinned for reproducibility; the v0.6.0+ archive layout is lib/{include,libteleproto3.a}.
+ARG T3_LIB_VERSION=v0.6.0
 RUN ARCH=$(uname -m) && \
-    curl -fsSL "https://github.com/ankuper/teleproto3/releases/latest/download/libteleproto3-linux-${ARCH}.tar.gz" \
+    curl -fsSL "https://github.com/ankuper/teleproto3/releases/download/${T3_LIB_VERSION}/libteleproto3-linux-${ARCH}.tar.gz" \
       -o /tmp/libteleproto3.tar.gz && \
-    mkdir -p teleproto3/include && \
+    mkdir -p teleproto3 && \
     tar xzf /tmp/libteleproto3.tar.gz -C teleproto3 && \
     rm /tmp/libteleproto3.tar.gz
 
@@ -32,7 +34,7 @@ RUN make clean && make -j$(nproc) \
     EXTRA_CFLAGS="${EXTRA_CFLAGS}" \
     EXTRA_LDFLAGS="${EXTRA_LDFLAGS}" \
     T3_SERVER_SOCKS5_CONNECT="${T3_SERVER_SOCKS5_CONNECT}" \
-    T3_LIB_DIR=teleproto3
+    T3_LIB_DIR=teleproto3/lib
 
 # Runtime image
 FROM alpine:3.21

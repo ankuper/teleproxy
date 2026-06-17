@@ -31,7 +31,8 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           # libteleproto3 is consumed from its GitHub Release (see CLAUDE.md
           # "Release & Deployment Rules"). Bump this to ship against a newer lib.
-          T3_LIB_VERSION="v0.5.0"
+          # v0.6.0+ archive layout: lib/{include,libteleproto3.a} (+ spec/).
+          T3_LIB_VERSION="v0.6.0"
           docker run --rm --platform ${{ matrix.platform }} \
             -v "$PWD:/src" -w /src alpine:3.21 sh -c "
               set -e
@@ -41,7 +42,7 @@ jobs:
               mkdir -p teleproto3 && tar xzf /tmp/libteleproto3.tar.gz -C teleproto3
               git config --global --add safe.directory /src
               make clean
-              make -j\$(nproc) EXTRA_VERSION=${VERSION} EXTRA_LDFLAGS='-static' T3_LIB_DIR=teleproto3
+              make -j\$(nproc) EXTRA_VERSION=${VERSION} EXTRA_LDFLAGS='-static' T3_LIB_DIR=teleproto3/lib
             "
 
       - name: Verify static linking
