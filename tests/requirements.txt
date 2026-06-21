@@ -1,3 +1,4 @@
 requests
 telethon>=1.42,<1.43.0
 TelethonFakeTLS
+cryptography  # story 9.4: HTTP-stream obfs2 tunnel client (_t3_httpstream_client.py)

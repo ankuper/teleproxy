@@ -1,0 +1,51 @@
+# Story 9.4 ATDD stand — SOCKS5 tunnel over the Type3 HTTP-stream path.
+#
+# RED-PHASE: NOT wired into .github/workflows/test.yml yet. Bring up manually
+# during green-phase activation; the tester skips (exit 0) unless
+# ATDD_9_4_ACTIVATE=1 is set (see test_socks5_tunnel_httpstream.py).
+#
+#   TELEPROXY_SECRET     = <32 hex>                 (the proxy's secret key)
+#   TELEPROXY_SECRET_HEX = ff<same 32 hex>127.0.0.1 (full Type3 secret for the client)
+# The 16-byte KEY in both MUST match.
+services:
+  echo:
+    build: .
+    command: ["python3", "echo_server.py"]
+    environment:
+      - ECHO_PORT=9000
+
+  teleproxy:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        T3_SERVER_SOCKS5_CONNECT: "1"   # AC3: compile the calls SOCKS5 tunnel in
+        DEBUG_TOOLS: "1"
+    environment:
+      - SECRET=${TELEPROXY_SECRET}
+      - PORT=8443
+      - DIRECT_MODE=true
+      - WORKERS=1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8888/stats || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  tester:
+    build: .
+    environment:
+      - TELEPROXY_HOST=teleproxy
+      - TELEPROXY_HTTP_PORT=8443
+      - TELEPROXY_STATS_PORT=8888
+      - TELEPROXY_SECRET_HEX=${TELEPROXY_SECRET_HEX}
+      - TARGET_HOST=echo
+      - TARGET_PORT=9000
+      # - ATDD_9_4_ACTIVATE=1   # uncomment at green-phase activation
+    command: ["python3", "test_socks5_tunnel_httpstream.py"]
+    depends_on:
+      teleproxy:
+        condition: service_healthy
+      echo:
+        condition: service_started
