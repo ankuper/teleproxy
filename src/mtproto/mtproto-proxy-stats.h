@@ -53,6 +53,7 @@ struct worker_stats {
   long long socks5_connect_tunnels_total;
   long long socks5_connect_tunnels_bytes_up;
   long long socks5_connect_tunnels_bytes_down;
+  long long socks5_connect_tunnels_rejected;
 
   long long connections_failed_lru, connections_failed_flood;
 

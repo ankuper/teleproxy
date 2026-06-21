@@ -13,6 +13,8 @@ services:
     command: ["python3", "echo_server.py"]
     environment:
       - ECHO_PORT=9000
+    networks:
+      - testnet
 
   teleproxy:
     build:
@@ -26,12 +28,15 @@ services:
       - PORT=8443
       - DIRECT_MODE=true
       - WORKERS=1
+      - STATS_ALLOW_NET=100.64.0.0/24   # allow CGNAT test network to access /stats
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8888/stats || exit 1"]
       interval: 2s
       timeout: 5s
       retries: 30
       start_period: 5s
+    networks:
+      - testnet
 
   tester:
     build: .
@@ -42,10 +47,21 @@ services:
       - TELEPROXY_SECRET_HEX=${TELEPROXY_SECRET_HEX}
       - TARGET_HOST=echo
       - TARGET_PORT=9000
-      # - ATDD_9_4_ACTIVATE=1   # uncomment at green-phase activation
+      - ATDD_9_4_ACTIVATE=1
     command: ["python3", "test_socks5_tunnel_httpstream.py"]
     depends_on:
       teleproxy:
         condition: service_healthy
       echo:
         condition: service_started
+    networks:
+      - testnet
+
+# CGNAT subnet (100.64.0.0/10): not in our SSRF block-list (RFC1918/loopback/
+# link-local), so the echo target resolves to an allowed address. Without this,
+# Docker's default bridge uses 172.x.x.x (172.16.0.0/12 = blocked).
+networks:
+  testnet:
+    ipam:
+      config:
+        - subnet: 100.64.0.0/24

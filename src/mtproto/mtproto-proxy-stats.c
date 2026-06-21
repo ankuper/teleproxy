@@ -188,6 +188,7 @@ static void update_local_stats_copy (struct worker_stats *S) {
   UPD (socks5_connect_tunnels_total);
   UPD (socks5_connect_tunnels_bytes_up);
   UPD (socks5_connect_tunnels_bytes_down);
+  UPD (socks5_connect_tunnels_rejected);
   UPD (connections_failed_lru);
   UPD (connections_failed_flood);
   UPD (ext_connections);
@@ -296,6 +297,7 @@ static inline void add_stats (struct worker_stats *W) {
   UPD (socks5_connect_tunnels_total);
   UPD (socks5_connect_tunnels_bytes_up);
   UPD (socks5_connect_tunnels_bytes_down);
+  UPD (socks5_connect_tunnels_rejected);
   UPD (connections_failed_lru);
   UPD (connections_failed_flood);
   UPD (ext_connections);
@@ -490,6 +492,7 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
 	     "socks5_connect_tunnels_total\t%lld\n"
 	     "socks5_connect_tunnels_bytes_up\t%lld\n"
 	     "socks5_connect_tunnels_bytes_down\t%lld\n"
+	     "socks5_connect_tunnels_rejected\t%lld\n"
 	     "proxy_protocol_enabled\t%d\n"
 	     "proxy_protocol_connections\t%lld\n"
 	     "proxy_protocol_errors\t%lld\n"
@@ -581,6 +584,7 @@ void mtfront_prepare_stats (stats_buffer_t *sb) {
 	     S(socks5_connect_tunnels_total),
 	     S(socks5_connect_tunnels_bytes_up),
 	     S(socks5_connect_tunnels_bytes_down),
+	     S(socks5_connect_tunnels_rejected),
 	     proxy_protocol_enabled,
 	     S(proxy_protocol_connections_total),
 	     S(proxy_protocol_errors_total),

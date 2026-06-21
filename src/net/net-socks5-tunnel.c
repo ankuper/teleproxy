@@ -1,21 +1,26 @@
-/* net-socks5-tunnel.c — server-side SOCKS5/CONNECT tunnel (Story 9-1).
+/* net-socks5-tunnel.c — server-side SOCKS5/CONNECT tunnel (Stories 9-1, 9-4).
  *
  * Dogfood implementation for ≤5 users.  One detached thread per tunnel.
  * Each thread:
- *   1. Reads SOCKS5 auth greeting + CONNECT request from the shim via the
- *      existing Type3 WS+AES-CTR channel (relay_fd = dup of c->fd).
+ *   1. Reads SOCKS5 auth greeting + CONNECT request via the Type3 channel.
  *   2. Opens a TCP connection to the requested target host:port.
  *   3. Sends SOCKS5 success/failure response back through the tunnel.
  *   4. Splices bidirectionally (poll loop) until either side closes.
+ *
+ * Two transport codecs (selected at spawn time via relay_args.read_msg /
+ * relay_args.write_msg):
+ *   WS path (WS_STATE_ACTIVE):
+ *     Frames are RFC 6455 binary frames, AES-CTR encrypted payload.
+ *   HTTP-stream path (WS_STATE_HTTP_STREAM, Story 9-4):
+ *     Frames are length-delimited padded-intermediate over HTTP chunked:
+ *       [wire_len:4 LE][inner_len:2 LE][payload]  — encrypted as one chunk.
  *
  * Thread lifecycle: spawn → splice → close relay_fd + target_fd → free.
  * The connection system concurrently closes c->fd (via fail_connection);
  * relay_fd = dup(c->fd) keeps the socket alive until the thread closes it.
  *
- * WS framing:  client→server frames are masked binary (RFC 6455 §5.3).
- *              server→client frames are unmasked binary.
- * AES-CTR:     contexts copied from c->crypto before fail_connection.
- *              EVP_EncryptUpdate used for both directions (CTR mode).
+ * AES-CTR:  contexts copied from c->crypto before fail_connection.
+ *           EVP_EncryptUpdate used for both directions (CTR mode).
  */
 
 #define _GNU_SOURCE 1
@@ -24,6 +29,7 @@
 #include "net/net-socks5-tunnel.h"
 #include "net/net-connections.h"
 #include "net/net-crypto-aes.h"
+#include "net/net-websocket.h"
 #include "common/kprintf.h"
 
 #include <arpa/inet.h>
@@ -55,9 +61,18 @@ long long socks5_connect_tunnels_rejected;  /* D4: refused (cap or guard) */
 /* ── relay thread state ───────────────────────────────────────────────── */
 
 struct relay_args {
-  int relay_fd;           /* dup'd connection fd; owns WS+AES-CTR channel */
+  int relay_fd;           /* dup'd connection fd; owns AES-CTR channel */
   EVP_CIPHER_CTX *enc;    /* write (encrypt plaintext → shim) */
   EVP_CIPHER_CTX *dec;    /* read  (decrypt ciphertext ← shim) */
+  /* transport-specific frame codec (set at spawn time) */
+  uint8_t *(*read_msg)(int fd, EVP_CIPHER_CTX *dec, int *out_len);
+  int      (*write_msg)(int fd, EVP_CIPHER_CTX *enc, const uint8_t *plain, int len);
+  /* HTTP-stream only: relay thread must send HTTP 200 before SOCKS5 handshake.
+   * The event loop queues HTTP 200 to c->out_p but fail_connection(JS_ABORT)
+   * discards it when POST headers + obfs2 init arrive in one TCP segment.
+   * socks5_tunnel_start detects this (out_p.total_bytes > 0), clears out_p,
+   * and sets this flag so relay_thread sends the 200 directly. */
+  int send_http_200;
 };
 
 /* ── I/O helpers ──────────────────────────────────────────────────────── */
@@ -182,12 +197,96 @@ static int ws_write_encrypt (int fd, EVP_CIPHER_CTX *enc, const uint8_t *plain, 
   return r;
 }
 
+/* ── HTTP-stream chunk helpers (Story 9-4) ────────────────────────────── */
+
+/* Read one HTTP chunked-transfer chunk from fd, decrypt with AES-CTR, return.
+ * Caller must free().  Returns NULL on error. */
+static uint8_t *hs_recv_chunk (int fd, EVP_CIPHER_CTX *dec, int *out_len) {
+  char line[16]; int li = 0;
+  for (;;) {
+    uint8_t c;
+    if (recv_all (fd, &c, 1) < 0) return NULL;
+    if (c == '\n') break;
+    if (c != '\r' && li < (int)sizeof(line)-2) line[li++] = (char)c;
+  }
+  line[li] = '\0';
+  long sz = strtol (line, NULL, 16);
+  if (sz <= 0 || sz > (1 << 20)) return NULL;
+  uint8_t *buf = malloc ((size_t)sz);
+  if (!buf) return NULL;
+  if (recv_all (fd, buf, (int)sz) < 0) { free (buf); return NULL; }
+  uint8_t crlf[2];
+  if (recv_all (fd, crlf, 2) < 0) { free (buf); return NULL; }
+  int olen = (int)sz;
+  if (EVP_EncryptUpdate (dec, buf, &olen, buf, (int)sz) != 1) { free (buf); return NULL; }
+  *out_len = (int)sz;
+  return buf;
+}
+
+/* Read one length-delimited message from the HTTP-stream tunnel.
+ * Frame wire format (after AES-CTR decrypt, per Story 9-2 contract):
+ *   [wire_len:4 LE][inner_len:2 LE][payload]
+ * Accumulates chunks until a complete frame is available.
+ * Caller must free().  Returns NULL on error. */
+static uint8_t *ld_read_decrypt (int fd, EVP_CIPHER_CTX *dec, int *out_len) {
+  uint8_t *acc = NULL; int acc_len = 0;
+  for (;;) {
+    if (acc_len >= 6) {
+      uint32_t wl = *(uint32_t *)acc & 0x7FFFFFFFu;
+      if ((uint32_t)acc_len >= 4u + wl) {
+        int il = (int)acc[4] | ((int)acc[5] << 8);
+        if (il + 2 > (int)wl) il = (int)wl - 2;
+        if (il < 0) il = 0;
+        uint8_t *out = malloc ((size_t)(il > 0 ? il : 1));
+        if (!out) { free (acc); return NULL; }
+        if (il > 0) memcpy (out, acc + 6, (size_t)il);
+        free (acc);
+        *out_len = il;
+        return out;
+      }
+    }
+    int cn;
+    uint8_t *chunk = hs_recv_chunk (fd, dec, &cn);
+    if (!chunk) { free (acc); return NULL; }
+    uint8_t *na = realloc (acc, (size_t)(acc_len + cn));
+    if (!na) { free (chunk); free (acc); return NULL; }
+    acc = na;
+    memcpy (acc + acc_len, chunk, (size_t)cn);
+    acc_len += cn;
+    free (chunk);
+  }
+}
+
+/* Encrypt and send one length-delimited message as one HTTP chunk.
+ * Returns 0 on success, -1 on error. */
+static int ld_write_encrypt (int fd, EVP_CIPHER_CTX *enc, const uint8_t *plain, int len) {
+  if (len < 0 || len > (1 << 20) - 6) return -1;
+  uint32_t wl = (uint32_t)(2 + len);
+  int fl = 4 + (int)wl;
+  uint8_t *fr = malloc ((size_t)fl);
+  if (!fr) return -1;
+  memcpy (fr, &wl, 4);
+  fr[4] = (uint8_t)(len & 0xFF);
+  fr[5] = (uint8_t)((len >> 8) & 0xFF);
+  if (len > 0) memcpy (fr + 6, plain, (size_t)len);
+  int olen = fl;
+  if (EVP_EncryptUpdate (enc, fr, &olen, fr, fl) != 1) { free (fr); return -1; }
+  char hdr[16];
+  int hl = snprintf (hdr, sizeof(hdr), "%x\r\n", (unsigned)fl);
+  int r = 0;
+  if (send_all (fd, (const uint8_t *)hdr, hl) < 0 ||
+      send_all (fd, fr, fl) < 0 ||
+      send_all (fd, (const uint8_t *)"\r\n", 2) < 0) r = -1;
+  free (fr);
+  return r;
+}
+
 /* ── SOCKS5 handshake ─────────────────────────────────────────────────── */
 
 /* Perform auth negotiation (NO-AUTH only).  Returns 0 on success. */
-static int socks5_auth (int fd, EVP_CIPHER_CTX *enc, EVP_CIPHER_CTX *dec) {
+static int socks5_auth (struct relay_args *a) {
   int len;
-  uint8_t *pkt = ws_read_decrypt (fd, dec, &len);
+  uint8_t *pkt = a->read_msg (a->relay_fd, a->dec, &len);
   if (!pkt) return -1;
   int ok = 0;
   if (len >= 3 && pkt[0] == 0x05) {
@@ -200,15 +299,14 @@ static int socks5_auth (int fd, EVP_CIPHER_CTX *enc, EVP_CIPHER_CTX *dec) {
   }
   free (pkt);
   uint8_t resp[2] = { 0x05, ok ? (uint8_t)0x00 : (uint8_t)0xFF };
-  if (ws_write_encrypt (fd, enc, resp, 2) < 0) return -1;
+  if (a->write_msg (a->relay_fd, a->enc, resp, 2) < 0) return -1;
   return ok ? 0 : -1;
 }
 
 /* Parse CONNECT request, fill host/port.  Returns 0 on success. */
-static int socks5_connect_req (int fd, EVP_CIPHER_CTX *enc, EVP_CIPHER_CTX *dec,
-                               char *host, uint16_t *port) {
+static int socks5_connect_req (struct relay_args *a, char *host, uint16_t *port) {
   int len;
-  uint8_t *pkt = ws_read_decrypt (fd, dec, &len);
+  uint8_t *pkt = a->read_msg (a->relay_fd, a->dec, &len);
   if (!pkt) return -1;
 
   int rc = -1;
@@ -216,7 +314,7 @@ static int socks5_connect_req (int fd, EVP_CIPHER_CTX *enc, EVP_CIPHER_CTX *dec,
     if (len < 5 || pkt[0] != 0x05) break;
     if (pkt[1] != 0x01) {           /* not CONNECT */
       uint8_t err[10] = { 0x05, 0x07, 0x00, 0x01, 0,0,0,0, 0,0 };
-      ws_write_encrypt (fd, enc, err, 10);
+      a->write_msg (a->relay_fd, a->enc, err, 10);
       break;
     }
     uint8_t atyp = pkt[3];
@@ -239,7 +337,7 @@ static int socks5_connect_req (int fd, EVP_CIPHER_CTX *enc, EVP_CIPHER_CTX *dec,
       rc = 0;
     } else {
       uint8_t err[10] = { 0x05, 0x08, 0x00, 0x01, 0,0,0,0, 0,0 };
-      ws_write_encrypt (fd, enc, err, 10);
+      a->write_msg (a->relay_fd, a->enc, err, 10);
     }
   } while (0);
 
@@ -328,7 +426,7 @@ static void relay_splice (struct relay_args *a, int tfd) {
     /* shim → target */
     if (pfds[0].revents & POLLIN) {
       int plen;
-      uint8_t *plain = ws_read_decrypt (a->relay_fd, a->dec, &plen);
+      uint8_t *plain = a->read_msg (a->relay_fd, a->dec, &plen);
       if (!plain) break;
       int sent = 0;
       while (sent < plen) {
@@ -346,7 +444,7 @@ static void relay_splice (struct relay_args *a, int tfd) {
       uint8_t buf[16384];
       int n = (int)recv (tfd, buf, sizeof (buf), 0);
       if (n <= 0) break;
-      if (ws_write_encrypt (a->relay_fd, a->enc, buf, n) < 0) break;
+      if (a->write_msg (a->relay_fd, a->enc, buf, n) < 0) break;
       __sync_fetch_and_add (&socks5_connect_tunnels_bytes_down, n);
     }
 
@@ -360,6 +458,7 @@ done:;
 static void *relay_thread (void *arg) {
   struct relay_args *a = arg;
   int tfd = -1;
+  int active_counted = 0;
   char host[256] = {0}; uint16_t port = 0;
 
   /* P4: belt-and-braces with MSG_NOSIGNAL — block SIGPIPE on the relay
@@ -370,19 +469,57 @@ static void *relay_thread (void *arg) {
   sigaddset (&sigp, SIGPIPE);
   pthread_sigmask (SIG_BLOCK, &sigp, NULL);
 
-  if (socks5_auth (a->relay_fd, a->enc, a->dec) < 0) goto done;
-  if (socks5_connect_req (a->relay_fd, a->enc, a->dec, host, &port) < 0) goto done;
+  /* HTTP-stream: send HTTP 200 before SOCKS5 handshake.  The event loop
+   * queued it to c->out_p + JS_RUN, but if POST headers and the obfs2 init
+   * arrived in the same TCP segment, fail_connection(JS_ABORT) preempts
+   * JS_RUN and discards out_p.  socks5_tunnel_start detected this, cleared
+   * out_p, and set send_http_200 so we deliver it here instead. */
+  if (a->send_http_200) {
+    static const char http_200[] =
+      "HTTP/1.1 200 OK\r\n"
+      "Content-Type: application/octet-stream\r\n"
+      "Transfer-Encoding: chunked\r\n"
+      "Connection: keep-alive\r\n"
+      "\r\n";
+    if (send_all (a->relay_fd, (const uint8_t *)http_200, (int)(sizeof(http_200) - 1)) < 0)
+      goto done;
+  }
+
+  if (socks5_auth (a) < 0) goto done;
+  if (socks5_connect_req (a, host, &port) < 0) goto done;
+
+  /* D4: cap check AFTER the SOCKS5 handshake so we can return a proper
+   * SOCKS5 REP=0x05 (connection refused) instead of silently dropping.
+   * Increment first, then check prev — if prev was already at the cap,
+   * undo and reject with a SOCKS5 error frame. */
+  {
+    long long prev = __sync_fetch_and_add (&socks5_connect_tunnels_active, 1);
+    if (prev >= SOCKS5_TUNNEL_MAX_CONCURRENT) {
+      __sync_fetch_and_sub (&socks5_connect_tunnels_active, 1);
+      __sync_fetch_and_add (&socks5_connect_tunnels_rejected, 1);
+      vkprintf (0, "socks5_tunnel: cap %d reached (active=%lld), rejecting CONNECT %s:%u\n",
+                SOCKS5_TUNNEL_MAX_CONCURRENT, prev, host, (unsigned)port);
+      uint8_t err[10] = { 0x05, 0x05, 0x00, 0x01, 0,0,0,0, 0,0 };  /* REP=0x05 conn refused */
+      a->write_msg (a->relay_fd, a->enc, err, 10);
+      goto done;
+    }
+    active_counted = 1;
+    __sync_fetch_and_add (&socks5_connect_tunnels_total, 1);
+  }
 
   vkprintf (1, "socks5_tunnel: CONNECT %s:%u\n", host, (unsigned)port);
   tfd = tcp_connect_target (host, port);
 
   uint8_t resp[10] = { 0x05, tfd >= 0 ? 0x00 : 0x04, 0x00, 0x01,
                         0,0,0,0, 0,0 };
-  if (ws_write_encrypt (a->relay_fd, a->enc, resp, 10) < 0) goto done;
   if (tfd < 0) {
-    vkprintf (1, "socks5_tunnel: connect to %s:%u failed\n", host, (unsigned)port);
-    goto done;
+    /* count SSRF-blocked and unreachable targets */
+    __sync_fetch_and_add (&socks5_connect_tunnels_rejected, 1);
+    vkprintf (1, "socks5_tunnel: connect to %s:%u failed (SSRF-blocked or unreachable)\n",
+              host, (unsigned)port);
   }
+  if (a->write_msg (a->relay_fd, a->enc, resp, 10) < 0) goto done;
+  if (tfd < 0) goto done;
 
   relay_splice (a, tfd);
 
@@ -392,7 +529,8 @@ done:
   EVP_CIPHER_CTX_free (a->enc);
   EVP_CIPHER_CTX_free (a->dec);
   free (a);
-  __sync_fetch_and_sub (&socks5_connect_tunnels_active, 1);
+  if (active_counted)
+    __sync_fetch_and_sub (&socks5_connect_tunnels_active, 1);
   return NULL;
 }
 
@@ -409,14 +547,15 @@ int socks5_tunnel_start (connection_job_t C) {
     return 0;
   }
 
-  /* D4: concurrent-tunnel cap. Calls v1 = dogfood ≤5; SOCKS5_TUNNEL_MAX_CONCURRENT=32
-   * gives ample headroom while protecting the server against runaway spawn.
-   * Counter bump is the oncall signal that something hit the cap. */
+  /* Hard limit: reject at the HTTP level (no SOCKS5 response) only when far
+   * above the soft cap — this prevents runaway thread spawning under a flood
+   * while keeping the normal cap check inside relay_thread (where we can
+   * return a proper SOCKS5 REP=0x05 error). */
   long long active_now = __sync_fetch_and_add (&socks5_connect_tunnels_active, 0);
-  if (active_now >= SOCKS5_TUNNEL_MAX_CONCURRENT) {
+  if (active_now >= SOCKS5_TUNNEL_MAX_CONCURRENT * 2) {
     __sync_fetch_and_add (&socks5_connect_tunnels_rejected, 1);
-    vkprintf (0, "socks5_tunnel: cap %d reached (active=%lld), rejecting connection\n",
-              SOCKS5_TUNNEL_MAX_CONCURRENT, active_now);
+    vkprintf (0, "socks5_tunnel: hard cap %d reached (active=%lld), dropping\n",
+              SOCKS5_TUNNEL_MAX_CONCURRENT * 2, active_now);
     fail_connection (C, -1);
     return 0;
   }
@@ -427,12 +566,34 @@ int socks5_tunnel_start (connection_job_t C) {
   a->enc = EVP_CIPHER_CTX_new ();
   a->dec = EVP_CIPHER_CTX_new ();
   a->relay_fd = -1;
+  /* AC1/AC2 (Story 9-4): select codec based on transport */
+  if (c->ws_state == WS_STATE_HTTP_STREAM) {
+    a->read_msg  = ld_read_decrypt;
+    a->write_msg = ld_write_encrypt;
+  } else {
+    a->read_msg  = ws_read_decrypt;
+    a->write_msg = ws_write_encrypt;
+  }
 
   if (!a->enc || !a->dec
       || EVP_CIPHER_CTX_copy (a->enc, T->write_aeskey) != 1
       || EVP_CIPHER_CTX_copy (a->dec, T->read_aeskey)  != 1) {
     vkprintf (0, "socks5_tunnel: EVP_CIPHER_CTX_copy failed\n");
     goto fail_args;
+  }
+
+  /* HTTP-stream: if the event loop queued HTTP 200 to c->out_p but hasn't
+   * flushed it yet (out_p.total_bytes > 0), clear it here so JS_ABORT won't
+   * try to write it (to a closed fd) and set send_http_200 so relay_thread
+   * writes it directly before the SOCKS5 handshake.  If out_p is already
+   * empty the HTTP 200 was flushed by JS_RUN; relay_thread must NOT send
+   * it again. */
+  if (c->ws_state == WS_STATE_HTTP_STREAM) {
+    a->send_http_200 = (c->out_p.total_bytes > 0);
+    if (a->send_http_200) {
+      rwm_clear (&c->out_p);
+      vkprintf (1, "socks5_tunnel: HTTP 200 deferred to relay thread (out_p not flushed)\n");
+    }
   }
 
   a->relay_fd = dup (c->fd);
@@ -466,8 +627,6 @@ int socks5_tunnel_start (connection_job_t C) {
     goto fail_args;
   }
 
-  __sync_fetch_and_add (&socks5_connect_tunnels_active, 1);
-  __sync_fetch_and_add (&socks5_connect_tunnels_total, 1);
   vkprintf (1, "socks5_tunnel: relay thread spawned for fd=%d (relay_fd=%d)\n",
             c->fd, a->relay_fd);
   fail_connection (C, -1);

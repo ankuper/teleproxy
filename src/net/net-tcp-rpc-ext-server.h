@@ -121,3 +121,4 @@ extern long long socks5_connect_tunnels_active;
 extern long long socks5_connect_tunnels_total;
 extern long long socks5_connect_tunnels_bytes_up;
 extern long long socks5_connect_tunnels_bytes_down;
+extern long long socks5_connect_tunnels_rejected;

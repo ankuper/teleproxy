@@ -88,7 +88,7 @@ DEPDIRS := ${DEP} $(addprefix ${DEP}/,${PROJECTS})
 ALLDIRS := ${DEPDIRS} ${OBJDIRS}
 
 
-.PHONY:	all clean lint tests test test-tls test-wildcard-cert test-multi-secret test-secret-limit test-secret-quota test-rate-limit test-top-ips test-ip-acl test-drs-delays test-cdn-dc test-ipv6-direct test-dc-lookup test-config-reload test-secret-drain test-check test-link test-link-ip test-stats-port test-install-config test-proxy-protocol test-dc-probes test-junk test-handshake-timeout test-csv-label test-external-port test-unique-ips test-table-full docker-image-amd64 docker-run-help-amd64 docker-image-arm64 docker-run-help-arm64 fuzz fuzz-run
+.PHONY:	all clean lint tests test test-tls test-wildcard-cert test-multi-secret test-secret-limit test-secret-quota test-rate-limit test-top-ips test-ip-acl test-drs-delays test-cdn-dc test-ipv6-direct test-dc-lookup test-config-reload test-secret-drain test-check test-link test-link-ip test-stats-port test-install-config test-proxy-protocol test-dc-probes test-junk test-handshake-timeout test-csv-label test-external-port test-unique-ips test-table-full test-socks5-tunnel docker-image-amd64 docker-run-help-amd64 docker-image-arm64 docker-run-help-arm64 fuzz fuzz-run
 
 EXELIST	:= ${EXE}/teleproxy
 
@@ -386,6 +386,16 @@ test-socks5:
 		docker compose -f tests/docker-compose.socks5-test.yml logs teleproxy socks5; \
 		docker compose -f tests/docker-compose.socks5-test.yml down; exit 1)
 	docker compose -f tests/docker-compose.socks5-test.yml down
+
+test-socks5-tunnel:
+	@export TELEPROXY_SECRET=$$(head -c 16 /dev/urandom | xxd -ps) && \
+	export TELEPROXY_SECRET_HEX=ff$${TELEPROXY_SECRET}127.0.0.1 && \
+	echo "Using secret: $$TELEPROXY_SECRET" && \
+	timeout 300s docker compose -f tests/docker-compose.socks5-tunnel-test.yml up --build --exit-code-from tester || \
+		(echo "SOCKS5 tunnel test timed out or failed"; \
+		docker compose -f tests/docker-compose.socks5-tunnel-test.yml logs teleproxy echo; \
+		docker compose -f tests/docker-compose.socks5-tunnel-test.yml down; exit 1)
+	docker compose -f tests/docker-compose.socks5-tunnel-test.yml down
 
 test-proxy-protocol:
 	@export TELEPROXY_SECRET=$$(head -c 16 /dev/urandom | xxd -ps) && \

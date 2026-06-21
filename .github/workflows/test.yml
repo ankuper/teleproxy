@@ -134,6 +134,9 @@ jobs:
     - name: Run SOCKS5 Upstream Proxy Tests
       run: make test-socks5
 
+    - name: Run SOCKS5 Tunnel over HTTP-stream Tests
+      run: make test-socks5-tunnel
+
     - name: Run PROXY Protocol Tests
       run: make test-proxy-protocol
 
