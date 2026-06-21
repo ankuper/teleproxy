@@ -84,6 +84,7 @@ jobs:
         build-args: |
           VERSION=${{ steps.meta.outputs.version }}
           T3_SERVER_SOCKS5_CONNECT=1
+          T3_LIB_VERSION=lib-v0.8.0
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
