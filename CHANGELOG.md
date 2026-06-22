@@ -1,5 +1,25 @@
 # Changelog
 
+## [4.15.0-t3-v0.8.0] — Type3 transport on upstream 4.15.0 (libteleproto3 v0.8.0)
+
+Same upstream teleproxy 4.15.0 base as the t3-v0.6.0 release, statically linked
+against [libteleproto3 lib-v0.8.0](https://github.com/ankuper/teleproto3/releases/tag/lib-v0.8.0).
+
+### Changed
+
+- Bump libteleproto3 `v0.6.0` → **`lib-v0.8.0`** (`T3_LIB_VERSION` in `release.yml`,
+  matching the ghcr.io image which already ships against lib-v0.8.0).
+- The HTTP-stream chat transport wire format is unchanged across v0.6.0→v0.8.0.
+  v0.8.0 adds the additive `t3_client_create_tunnel` API (SOCKS5-over-HTTP-stream
+  calls tunnel, Epic 9) and re-bases the SOCKS5 shim onto the canonical
+  `t3_client_*` HTTP-stream transport — no WebSocket upgrade on the wire.
+
+### Binaries
+
+Statically linked `teleproxy-linux-amd64` and `teleproxy-linux-arm64` (musl/Alpine),
+no runtime dependencies. Production deployment continues via the ghcr.io image
+(`ghcr.io/ankuper/teleproxy:4.15.0-t3-v0.8.0`); these binaries are for standalone use.
+
 ## [4.15.0-t3-v0.6.0] — Type3 transport on upstream 4.15.0 (libteleproto3 v0.6.0)
 
 Type3 (teleproto3) transport on upstream teleproxy 4.15.0, statically linked
