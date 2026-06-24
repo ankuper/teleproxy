@@ -1,118 +1,76 @@
-# Teleproxy
+<!-- Язык / Language: [Русский](#teleproxy) · [English](#teleproxy-en) -->
 
-[![CI](https://github.com/teleproxy/teleproxy/actions/workflows/test.yml/badge.svg)](https://github.com/teleproxy/teleproxy/actions/workflows/test.yml)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker)](https://github.com/teleproxy/teleproxy/pkgs/container/teleproxy)
-[![License: GPLv2](https://img.shields.io/badge/license-GPLv2-blue.svg)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/teleproxy/teleproxy?style=flat&label=stars)](https://github.com/teleproxy/teleproxy)
-[![Release](https://img.shields.io/github/v/release/teleproxy/teleproxy?label=release)](https://github.com/teleproxy/teleproxy/releases/latest)
-[![Telegram](https://img.shields.io/badge/telegram-@teleproxy__dev-blue?logo=telegram)](https://t.me/teleproxy_dev)
+<a name="teleproxy"></a>
+# teleproxy
 
-High-performance MTProto proxy for Telegram with DPI resistance, fake-TLS camouflage, and production-grade monitoring.
+**Анти-DPI прокси для Telegram — серверная сторона Type3 (mtProxy3).**
 
-**[Documentation](https://teleproxy.github.io)** | **[Docker Quick Start](https://teleproxy.github.io/docker/)** | **[Comparison](https://teleproxy.github.io/comparison/)** | **[Telegram](https://t.me/teleproxy_dev)**
+Туннелирует MTProto внутри обычного HTTPS-потока: для DPI/ТСПУ это просто
+веб-трафик, а не Telegram. Это сервер, к которому подключаются клиенты-форки
+**T3ChatM**. Сам протокол и его реализация — в
+[teleproto3](https://github.com/ankuper/teleproto3).
 
-> [!NOTE]
-> Teleproxy is maintained by one person. If it's useful to you, consider supporting development.
->
-> | | |
-> |---|---|
-> | Telegram | **[Donate via Tribute](https://t.me/tribute/app?startapp=dIa9)** (cards, worldwide) |
-> | Web | **[Donate via Tribute](https://web.tribute.tg/d/Ia9)** |
-> | TON | `UQCRB931D__Q2YQmAbUfcuHQ7fHsG3_3At7e6pUtNa6b9bTh` ([Tonkeeper](https://app.tonkeeper.com/transfer/UQCRB931D__Q2YQmAbUfcuHQ7fHsG3_3At7e6pUtNa6b9bTh)) |
+## Поднять свой узел
 
-<details>
-<summary>🎵 Ghost Protocol — the unofficial anthem</summary>
-<br>
-<video src="https://github.com/user-attachments/assets/37919bc8-2bbb-4bea-8af6-2e15d3bc7c65" controls width="640"></video>
-</details>
+Нужен VPS, домен и TLS (обычно nginx на `:443` терминирует TLS и проксирует на
+teleproxy). После запуска сервер выдаёт Type3-секрет / `tg://proxy?...`-ссылку —
+её и раздаёшь пользователям. Детали сборки и конфигурации — в репозитории
+(`docs/`, скрипты деплоя).
 
-## Deploy (beta)
+## Просто пользоваться (без своего сервера)
 
-Get a proxy running in under 2 minutes:
+Скачай готовый клиент — прокси уже встроен, настраивать нечего:
+→ **[T3ChatM — клиенты](https://github.com/ankuper/tdesktop/releases/latest)**
+(Android / iOS / Desktop)
 
-[![Deploy](https://img.shields.io/badge/deploy-one--click-00C853?style=for-the-badge&logoColor=white)](https://teleproxy.github.io/deploy/)
+## Протокол
 
-The deploy page generates a unique secret, gives you a script to paste when creating a VPS, then shows your connection QR code. No terminal needed.
+Type3: MTProto в HTTP-stream поверх TLS — для DPI неотличимо от обычного HTTPS.
+Спецификация и библиотека: [teleproto3](https://github.com/ankuper/teleproto3).
 
-Supports: DigitalOcean · Vultr · Hetzner · Linode · any Ubuntu/Debian VPS
+---
 
-## Highlights
+<a name="teleproxy-en"></a>
+# teleproxy (English)
 
-- **Fake-TLS camouflage** — traffic indistinguishable from normal HTTPS (TLS 1.3)
-- **Type3 transport** — dual-mode WebSocket + HTTP stream (POST+chunked) behind nginx; auto-detected per-connection. [WebSocket docs](docs/features/websocket-transport.md) · [HTTP stream docs](docs/features/http-stream-transport.md)
-- **Direct-to-DC mode** — bypass middle-end relays, zero config files needed
-- **Dynamic Record Sizing** — defeats statistical traffic analysis
-- **8 MB Docker image** — 7x smaller than the original
-- **Prometheus metrics** — production monitoring out of the box
-- **Up to 16 secrets** with labels and per-secret connection limits
-- **E2E tested** — the only MTProto proxy with automated tests against real Telegram
+**Anti-DPI proxy for Telegram — the server side of Type3 (mtProxy3).**
 
-## DPI Resistance
+Tunnels MTProto inside an ordinary HTTPS stream: to DPI it's just web traffic,
+not Telegram. This is the server the **T3ChatM** client forks connect to. The
+protocol and its implementation live in
+[teleproto3](https://github.com/ankuper/teleproto3).
 
-Teleproxy's fake-TLS produces traffic indistinguishable from a standard Chrome TLS 1.3 session. Every claim below is verified by automated tests in CI.
+## Run your own node
 
-| Layer | Implementation | Verified by |
-|-------|---------------|-------------|
-| ClientHello fingerprint | 517-byte Chrome-profile hello with 15 TLS extensions, GREASE (RFC 8701), X25519 key share, padding | `test_ja3_fingerprint`, `test_tls_extension_completeness`, `test_grease_randomness` |
-| ServerHello emulation | Live-probes the real backend (20 connections), mirrors extension order and encrypted record sizes | `test_emulation_matches_backend`, `test_server_hello_tls13_compliance` |
-| Record sizing | Dynamic Record Sizing mimics TCP slow-start (1450→4096→16144 bytes) with ±100B noise and Weibull inter-record delays | `test_drs_e2e.py` |
-| Active probing resistance | Every failed validation (wrong secret, stale timestamp, unknown SNI, replay, non-TLS) forwarded to real HTTPS backend | `test_wrong_secret_rejected`, `test_unknown_sni_falls_back`, `test_browser_tls_sees_real_backend` |
-| Anti-replay | client\_random dedup cache + 120-second timestamp window + HMAC-SHA256 binding | `test_duplicate_client_random_rejected`, `test_stale_timestamp_rejected` |
-| Encrypted payload entropy | Fake application data passes Shannon entropy validation (H ≥ 7.0 bits/byte) | `test_encrypted_data_entropy` |
+You need a VPS, a domain and TLS (typically nginx on `:443` terminating TLS and
+proxying to teleproxy). On start the server emits a Type3 secret / `tg://proxy?...`
+link to hand out. Build and config details are in the repository (`docs/`, deploy
+scripts).
 
-Every parser on the attack surface is fuzz-tested on every push (60s smoke) and weekly (30min deep exploration) with ASan + UBSan + libFuzzer. CodeQL and cppcheck run static analysis on every commit. The ASan CI even [verifies itself](https://github.com/teleproxy/teleproxy/blob/main/.github/workflows/test.yml) by re-introducing a known heap overflow and confirming detection.
+## Just use it (no server)
 
-Other MTProto proxy implementations describe their TLS layer with adjectives. Teleproxy describes it with test names. Every anti-fingerprinting claim above links to an automated test that runs in CI on every commit — from JA3 hash computation to Shannon entropy of encrypted payloads to DRS timing distributions. No other MTProto proxy validates its DPI resistance this way.
+Download a ready client — the proxy is built in:
+→ **[T3ChatM clients](https://github.com/ankuper/tdesktop/releases/latest)**
+(Android / iOS / Desktop)
 
-## Quick Start
+## Protocol
 
-### Docker (recommended)
+Type3: MTProto in an HTTP-stream over TLS — indistinguishable from HTTPS to DPI.
+Spec and library: [teleproto3](https://github.com/ankuper/teleproto3).
 
-```bash
-docker run -d \
-  --name teleproxy \
-  -p 443:443 \
-  --restart unless-stopped \
-  ghcr.io/teleproxy/teleproxy:latest
-```
+---
 
-Check logs for connection links: `docker logs teleproxy`
+## Поддержать инфраструктуру · Support
 
-### Static Binary
+Поддержать сервера (TON):
 
-```bash
-curl -Lo teleproxy https://github.com/teleproxy/teleproxy/releases/latest/download/teleproxy-linux-amd64
-chmod +x teleproxy
-SECRET=$(head -c 16 /dev/urandom | xxd -ps)
-./teleproxy -S "$SECRET" -H 443 --direct -p 8888 --aes-pwd /dev/null
-```
+`UQAYS0k0PEky8BUE1Rij90v8-CmOWsuhAzdLTHOzYC-qZ0pV`
 
-## Comparison
+Support the infrastructure (TON) — address above.
 
-| Feature | [Original](https://github.com/TelegramMessenger/MTProxy) | **[Teleproxy](https://github.com/teleproxy/teleproxy)** | [mtg](https://github.com/9seconds/mtg) | [telemt](https://github.com/telemt/telemt) |
-|---------|:---:|:---:|:---:|:---:|
-| **Language** | C | C | Go | Rust |
-| Fake-TLS (EE mode) | Yes | Yes | Yes | Yes |
-| Direct-to-DC mode | No | Yes | Yes | Yes |
-| Multiple secrets | Yes | Yes (up to 16) | No | Yes |
-| Anti-replay protection | Weak | Yes | Yes | Yes |
-| Dynamic Record Sizing | No | Yes | Yes | No |
-| Per-secret byte quotas | No | Yes | No | Yes |
-| IP blocklist / allowlist | No | Yes | Yes | No |
-| Docker image | ~57 MB | ~8 MB | ~3.5 MB | ~5 MB |
-| ARM64 / Apple Silicon | No | Yes | Yes | Yes |
-| Prometheus metrics | No | Yes | Yes | Yes |
-| E2E tests (real Telegram) | No | Yes | No | No |
-| TLS fingerprint validation (CI) | No | Yes | No | No |
-| Fuzz testing (CI) | No | Yes | No | Partial |
+---
 
-[Full comparison →](https://teleproxy.github.io/comparison/)
-
-## Docker Images
-
-- `ghcr.io/teleproxy/teleproxy:latest`
-- `rkline0x/teleproxy:latest` (Docker Hub)
-
-## License
-
-GPLv2 — see [LICENSE](LICENSE).
+> Форк Telegram MTProxy с добавленным Type3-транспортом. Независимый проект,
+> не аффилирован с Telegram Messenger.
+> Fork of Telegram MTProxy with Type3 transport added. Independent project,
+> not affiliated with Telegram Messenger.
